@@ -1,0 +1,20 @@
+{
+  "name": "cwsj-hygiene-pixel",
+  "private": true,
+  "version": "1.0.0",
+  "description": "彩雲聖若瑟小學小四常識科：個人衛生、防蚊及防鼠 720p 像素風網頁遊戲 (Phaser 3 + TypeScript)",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/generate-pixel-assets.mjs",
+    "dev": "node scripts/generate-pixel-assets.mjs && vite",
+    "build": "node scripts/generate-pixel-assets.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  }
+}

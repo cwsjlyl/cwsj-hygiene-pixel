@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 144" width="240" height="144">
+  <defs>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path d="M44 108 C20 108 12 88 24 70 C18 48 38 30 62 34 C76 14 112 12 132 28 C154 14 190 22 198 46 C220 50 228 76 212 94 C202 110 178 112 162 106 C146 122 108 124 90 110 C74 118 54 116 44 108 Z"
+          fill="#ffffff" stroke="#1d63dc" stroke-width="7" stroke-linejoin="round"/>
+    <path d="M52 103 C70 112 92 106 102 98 M142 102 C158 110 184 106 196 92"
+          fill="none" stroke="#60a5fa" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M76 54 C54 46 44 76 62 88 C74 95 86 86 82 76 C79 68 68 70 68 77"
+          fill="none" stroke="#ef4444" stroke-width="9" stroke-linecap="round"/>
+    <path d="M76 54 C66 50 56 56 54 66"
+          fill="none" stroke="#facc15" stroke-width="9" stroke-linecap="round"/>
+    <path d="M94 54 L104 88 L116 66 L128 88 L138 54"
+          fill="none" stroke="#1d63dc" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M166 56 C152 48 142 60 154 70 C168 80 156 96 142 88"
+          fill="none" stroke="#16a34a" stroke-width="9" stroke-linecap="round"/>
+    <path d="M166 56 C158 51 148 54 148 61"
+          fill="none" stroke="#facc15" stroke-width="9" stroke-linecap="round"/>
+    <path d="M186 54 L186 82 C186 94 172 94 170 83"
+          fill="none" stroke="#16a34a" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="177" y1="52" x2="195" y2="52" stroke="#ef4444" stroke-width="9" stroke-linecap="round"/>
+  </g>
+</svg>
