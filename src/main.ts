@@ -1,9 +1,13 @@
 import Phaser from 'phaser';
 import './style.css';
 import { sound } from './audio/RetroSound';
-import { PreloadScene } from './scenes/PreloadScene';
+import { installCrispChineseTextPatch } from './gfx/CrispVisuals';
 import { ExploreScene } from './scenes/ExploreScene';
+import { MinigameScene } from './scenes/MinigameScene';
+import { PreloadScene } from './scenes/PreloadScene';
 import { gameState } from './state/gameState';
+
+installCrispChineseTextPatch();
 
 let gameInstance: Phaser.Game | null = null;
 
@@ -28,7 +32,7 @@ function bootPhaserGame(): void {
         debug: false
       }
     },
-    scene: [PreloadScene, ExploreScene]
+    scene: [PreloadScene, ExploreScene, MinigameScene]
   });
 }
 
@@ -48,6 +52,7 @@ document.getElementById('btn-start-adventure')!.addEventListener('click', () => 
   document.getElementById('hud-player-pill')!.textContent = `👦 ${gameState.studentClass} ${gameState.studentName}`;
   document.getElementById('title-overlay')!.classList.add('hidden');
   sound.success();
+  sound.playBgm('home');
   bootPhaserGame();
 });
 
@@ -56,13 +61,19 @@ document.getElementById('btn-checklist-toggle')!.addEventListener('click', () =>
   sound.pop();
 });
 
+document.getElementById('btn-bgm-toggle')!.addEventListener('click', (e) => {
+  const playing = sound.toggleBgm();
+  (e.currentTarget as HTMLButtonElement).textContent = playing ? '🎵 音樂' : '🔕 音樂關';
+});
+
 document.getElementById('btn-audio-toggle')!.addEventListener('click', (e) => {
-  sound.muted = !sound.muted;
-  (e.currentTarget as HTMLButtonElement).textContent = sound.muted ? '🔇 靜音' : '🔊 音效';
+  sound.sfxMuted = !sound.sfxMuted;
+  (e.currentTarget as HTMLButtonElement).textContent = sound.sfxMuted ? '🔇 靜音' : '🔊 音效';
 });
 
 document.getElementById('btn-play-again')!.addEventListener('click', () => {
   gameState.reset();
   document.getElementById('cert-overlay')!.classList.add('hidden');
+  sound.playBgm('home');
   window.dispatchEvent(new CustomEvent('cwsj-restart-game'));
 });
