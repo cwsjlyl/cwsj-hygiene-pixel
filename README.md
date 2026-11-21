@@ -1,0 +1,1 @@
+# cwsj-hygiene-pixel
