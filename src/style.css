@@ -64,7 +64,14 @@ html, body {
 }
 
 .brand-box { display: flex; align-items: center; gap: 10px; }
-.school-logo { height: 46px; width: auto; flex-shrink: 0; }
+.school-logo {
+  height: 54px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: auto;
+  flex-shrink: 0;
+  display: block;
+}
 .brand-main { font-size: 15.5px; font-weight: 800; color: #ffffff; }
 .brand-sub { font-size: 12px; color: #93c5fd; margin-top: 2px; font-weight: 700; }
 
@@ -158,7 +165,7 @@ html, body {
   border: 4px solid #60a5fa; border-radius: 22px; padding: 26px 28px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
 }
 .title-header-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-.title-logo { width: 106px; height: auto; }
+.title-logo { width: 124px; height: auto; object-fit: contain; image-rendering: auto; flex-shrink: 0; }
 .title-header-row h1 { margin: 0; font-size: 30px; color: #fde047; text-shadow: 2px 3px 0 #1e3a8a; }
 .subtitle { margin: 4px 0 0; font-size: 14px; color: #bae6fd; }
 .hero-preview-strip { display: flex; align-items: center; gap: 14px; background: rgba(15, 23, 42, 0.75); border: 2px solid #334155; border-radius: 14px; padding: 10px 14px; margin-bottom: 16px; }
@@ -174,7 +181,7 @@ html, body {
 
 .cert-sheet { background: #fffbeb; color: #1e293b; border: 8px double #b45309; }
 .cert-top { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px dashed #d97706; padding-bottom: 12px; }
-.cert-logo { width: 92px; }
+.cert-logo { width: 108px; height: auto; object-fit: contain; image-rendering: auto; }
 .cert-avatar { width: 72px; height: 72px; image-rendering: pixelated; border-radius: 10px; border: 2px solid #b45309; background: #fef3c7; }
 .cert-school { font-size: 13px; font-weight: 800; color: #1d4ed8; }
 .cert-top h2 { margin: 4px 0 0; color: #78350f; font-size: 26px; }

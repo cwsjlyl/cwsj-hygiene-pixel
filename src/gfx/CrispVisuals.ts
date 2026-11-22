@@ -1,8 +1,5 @@
 import Phaser from 'phaser';
 
-/**
- * 升級版 4x 超清繁體中文貼圖解析度修補（源自 qing-shengshi-pixel 最佳實踐）
- */
 export function installCrispChineseTextPatch(): void {
   const proto = Phaser.GameObjects.Text.prototype as unknown as {
     updateText: () => Phaser.GameObjects.Text;
@@ -25,48 +22,37 @@ export function installCrispChineseTextPatch(): void {
 }
 
 /**
- * 雙重保險執行期 Sprite 去背淨化器：
- * 1) 若圖集本身已為原生 RGBA 透明，清除 < 28 微弱雜訊並將透明像素 RGB 歸零；
- * 2) 若載入外部仍帶有灰白棋盤格底稿的 PNG，自動由邊界與內部鏤空孔洞執行連通去背與 1px 灰邊淨化。
+ * 安全無阻塞執行期 Sprite 濾鏡與去背檢查：
+ * 若圖集四角已為透明 RGBA（如建置期已徹底去背之圖集），直接啟用 NEAREST 像素銳利濾鏡而不改寫 WebGL 貼圖來源，避免跨瀏覽器貼圖凍結。
  */
 export function sanitizeSpriteTextureAlpha(scene: Phaser.Scene, texKey: string): void {
-  if (!scene.textures.exists(texKey)) return;
-  const tex = scene.textures.get(texKey);
-  const srcImg = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
-  if (!srcImg || !srcImg.width || !srcImg.height) return;
+  try {
+    if (!scene.textures.exists(texKey)) return;
+    const tex = scene.textures.get(texKey);
+    tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
 
-  const w = srcImg.width;
-  const h = srcImg.height;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return;
+    const srcImg = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    if (!srcImg || !srcImg.width || !srcImg.height) return;
 
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(srcImg, 0, 0);
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const d = imgData.data;
+    const w = srcImg.width;
+    const h = srcImg.height;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
 
-  // Check if corners are opaque gray/white checkerboard (alpha > 240 on all 4 corners)
-  const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + (w - 1)) * 4];
-  const hasOpaqueCorners = corners.every((idx) => d[idx + 3] > 240);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(srcImg, 0, 0);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
 
-  if (!hasOpaqueCorners) {
-    // Already transparent RGBA: scrub any faint <28 alpha dust & zero RGB on transparent pixels
-    let modified = false;
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] < 28) {
-        if (d[i + 3] !== 0 || d[i] !== 0 || d[i + 1] !== 0 || d[i + 2] !== 0) modified = true;
-        d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0;
-      }
-    }
-    if (!modified) {
-      tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
-      return;
-    }
-  } else {
-    // Opaque checkerboard detected: run border flood-fill + interior checker-hole removal!
+    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + (w - 1)) * 4];
+    const hasOpaqueCorners = corners.every((idx) => d[idx + 3] > 240);
+
+    // 建置期已保證純透明 RGBA，直接返回避免破壞 WebGL HTMLImageElement TextureSource
+    if (!hasOpaqueCorners) return;
+
     const passable = new Uint8Array(w * h);
     const lumArr = new Float32Array(w * h);
     const chromaArr = new Uint8Array(w * h);
@@ -74,11 +60,9 @@ export function sanitizeSpriteTextureAlpha(scene: Phaser.Scene, texKey: string):
       const i = p * 4;
       const r = d[i], g = d[i + 1], b = d[i + 2];
       const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-      const ch = maxC - minC;
-      const lum = (r + g + b) / 3;
-      lumArr[p] = lum;
-      chromaArr[p] = ch;
-      if (ch <= 22 && lum >= 108) passable[p] = 1;
+      lumArr[p] = (r + g + b) / 3;
+      chromaArr[p] = maxC - minC;
+      if (chromaArr[p] <= 22 && lumArr[p] >= 108) passable[p] = 1;
     }
 
     const bgMask = new Uint8Array(w * h);
@@ -120,57 +104,45 @@ export function sanitizeSpriteTextureAlpha(scene: Phaser.Scene, texKey: string):
       }
     }
 
-    // 1px outer neutral anti-alias fringe cleanup
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const p = y * w + x;
-        if (bgMask[p]) continue;
-        const adjBg =
-          (x > 0 && bgMask[p - 1]) ||
-          (x < w - 1 && bgMask[p + 1]) ||
-          (y > 0 && bgMask[p - w]) ||
-          (y < h - 1 && bgMask[p + w]);
-        if (adjBg && chromaArr[p] <= 24 && lumArr[p] >= 114) {
-          bgMask[p] = 2;
-        }
-      }
-    }
-
     for (let p = 0; p < w * h; p++) {
       if (bgMask[p]) {
         const i = p * 4;
         d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0;
       }
     }
-  }
 
-  ctx.putImageData(imgData, 0, 0);
-  if (tex.source[0]) {
-    tex.source[0].image = canvas as unknown as HTMLImageElement;
-    tex.source[0].update();
+    ctx.putImageData(imgData, 0, 0);
+    if (tex.source[0]) {
+      (tex.source[0] as unknown as { isCanvas: boolean }).isCanvas = true;
+      tex.source[0].image = canvas as unknown as HTMLImageElement;
+      tex.source[0].update();
+    }
+    tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  } catch (err) {
+    console.warn('[CrispVisuals] sanitizeSpriteTextureAlpha skipped:', texKey, err);
   }
-  tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
-/**
- * 將高清小學生主角正面幀同步更新至對話框、標題頁及榮譽證書頭像
- */
 export function syncHeroPortraitToDom(scene: Phaser.Scene): void {
-  if (!scene.textures.exists('hero')) return;
-  const tex = scene.textures.get('hero');
-  const src = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
-  if (!src) return;
+  try {
+    if (!scene.textures.exists('hero')) return;
+    const tex = scene.textures.get('hero');
+    const src = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
+    if (!src || !src.width || !src.height) return;
 
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 168;
-  const ctx = c.getContext('2d');
-  if (!ctx) return;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(src, 0, 0, 64, 84, 0, 0, 128, 168);
-  const url = c.toDataURL('image/png');
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 168;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(src, 0, 0, 64, 84, 0, 0, 128, 168);
+    const url = c.toDataURL('image/png');
 
-  document.querySelectorAll<HTMLImageElement>('#dialogue-portrait, .hero-avatar, .cert-avatar').forEach((img) => {
-    img.src = url;
-  });
+    document.querySelectorAll<HTMLImageElement>('#dialogue-portrait, .hero-avatar, .cert-avatar').forEach((img) => {
+      img.src = url;
+    });
+  } catch (err) {
+    console.warn('[CrispVisuals] syncHeroPortraitToDom skipped:', err);
+  }
 }
