@@ -9,8 +9,9 @@ interface MapHotspot {
   y: number;
   radius: number;
   label: string;
-  sprite?: Phaser.GameObjects.Sprite;
-  cleanFrame?: number;
+  sprite?: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image;
+  cleanFrame?: string | number;
+  ring?: Phaser.GameObjects.Arc;
   emote?: Phaser.GameObjects.Sprite;
 }
 
@@ -53,14 +54,30 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到擴充版六大房間新居！先去左上【浴室】洗手刷牙、左下【睡房】剪指甲、右中【飯廳】蓋食物及右下【陽光露台】倒積水，再去香港街道冒險吧！`
+      `${gameState.studentName}，歡迎回到全新高清像素家居！你可以用搖桿／方向鍵走近發光家具按 A，或直接輕觸物件互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
     );
   }
 
-  private addWallBlock(x: number, y: number, w: number, h: number): void {
-    const z = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0x000000, 0);
+  private addFootCollider(cx: number, cy: number, w: number, h: number): void {
+    const z = this.add.rectangle(cx, cy, w, h, 0x000000, 0);
     this.physics.add.existing(z, true);
     this.colliders.add(z);
+  }
+
+  private addHomeProp(
+    frame: string,
+    x: number,
+    y: number,
+    scale = 1.35,
+    solidFoot = true,
+    depthOffset = 0
+  ): Phaser.GameObjects.Image {
+    const img = this.add.image(x, y, 'home-props', frame).setScale(scale);
+    img.setDepth(y + img.displayHeight * 0.36 + depthOffset);
+    if (solidFoot) {
+      this.addFootCollider(x, y + img.displayHeight * 0.22, img.displayWidth * 0.62, Math.max(22, img.displayHeight * 0.26));
+    }
+    return img;
   }
 
   private buildWorld(mapId: MapId): void {
@@ -72,26 +89,24 @@ export class ExploreScene extends Phaser.Scene {
     if (this.colliders) this.colliders.clear(true, true);
     this.colliders = this.physics.add.staticGroup();
 
-    const cols = mapId === 'home' ? 34 : 38;
-    const rows = 22;
-    const worldW = cols * 64;
-    const worldH = rows * 64;
-    this.physics.world.setBounds(0, 0, worldW, worldH);
+    const worldW = mapId === 'home' ? 1902 : 2112;
+    const worldH = mapId === 'home' ? 1380 : 1152;
+    this.physics.world.setBounds(36, 48, worldW - 72, worldH - 76);
     this.cameras.main.setBounds(0, 0, worldW, worldH);
 
-    if (mapId === 'home') this.buildExpandedHome(cols, rows);
-    else this.buildExpandedStreet(cols, rows);
+    if (mapId === 'home') this.buildHdHomeScene(worldW, worldH);
+    else this.buildHdStreetScene(worldW, worldH);
 
-    const spawn = mapId === 'home' ? { x: 15 * 64, y: 10 * 64 } : { x: 13 * 64, y: 6 * 64 };
+    const spawn = mapId === 'home' ? { x: 860, y: 760 } : { x: 640, y: 610 };
     this.companion = this.add.sprite(spawn.x - 48, spawn.y + 8, 'npcs', 16).setDepth(spawn.y);
     this.companion.play('companion-float');
 
-    this.hero = this.physics.add.sprite(spawn.x, spawn.y, 'hero', 0);
+    this.hero = this.physics.add.sprite(spawn.x, spawn.y, 'hero', 0).setScale(1.05);
     this.hero.setCollideWorldBounds(true);
     this.hero.play('hero-idle-down');
     const body = this.hero.body as Phaser.Physics.Arcade.Body;
-    body.setSize(32, 22);
-    body.setOffset(16, 38);
+    body.setSize(28, 20);
+    body.setOffset(18, 60);
 
     this.physics.add.collider(this.hero, this.colliders);
     this.cameras.main.startFollow(this.hero, true, 0.12, 0.12);
@@ -99,289 +114,211 @@ export class ExploreScene extends Phaser.Scene {
     this.promptTag = this.add.text(0, 0, '', {
       fontSize: '15px', fontStyle: 'bold', color: '#0f172a',
       backgroundColor: '#fde047', padding: { x: 10, y: 5 }
-    }).setOrigin(0.5, 1).setDepth(4000).setVisible(false);
+    }).setOrigin(0.5, 1).setDepth(5000).setVisible(false);
 
     this.refreshHud();
   }
 
   // ==========================================================================
-  // Expanded 6-Room Hong Kong Apartment (34x22 = 2176x1408 scrolling world!)
+  // 1. Upgraded Full-Canvas HD Home Interior + 26 De-Checkered 2.5D Props
   // ==========================================================================
-  private buildExpandedHome(cols: number, rows: number): void {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = c * 64 + 32, y = r * 64 + 32;
-        // Outer perimeter walls
-        if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
-          this.add.image(x, y, 'tiles-home', 8).setDepth(10);
-          continue;
-        }
-        if (r === 1) {
-          let wf = 9;
-          if (c === 3 || c === 4) wf = 10; // Bathroom mirrors
-          else if (c === 13 || c === 18 || c === 26) wf = 11; // Sunlit windows
-          else if (c === 15) wf = 13; // Hygiene poster
-          this.add.image(x, y, 'tiles-home', wf).setDepth(20);
-          continue;
-        }
-        // Floor zones across 6 distinct rooms:
-        let ff = (r + c) % 2 === 0 ? 0 : 1;
-        if (c <= 9 && r <= 10) ff = (c === 5 && r === 6) ? 3 : 2; // Bathroom aqua tiles
-        else if (c <= 9 && r >= 11) ff = (c >= 4 && c <= 6 && r >= 15 && r <= 17) ? 45 : ff; // Bedroom + pink rug
-        else if (c >= 22 && r <= 11) ff = 4; // Kitchen & Dining checkerboard
-        else if (c >= 27 && r >= 12) ff = 5; // Sunny Balcony cedar deck
-        else if ((c === 14 || c === 15 || c === 16 || c === 17) && (r >= 8 && r <= 11)) {
-          ff = (c % 2 === 0) ? 6 : 7; // Large Living Room woven carpet
-        }
-        this.add.image(x, y, 'tiles-home', ff);
-      }
-    }
+  private buildHdHomeScene(worldW: number, worldH: number): void {
+    const bg = this.add.image(0, 0, 'map-home').setOrigin(0, 0).setDepth(0);
+    bg.setDisplaySize(worldW, worldH);
 
-    // Outer boundary colliders
-    this.addWallBlock(0, 0, cols * 64, 128);
-    this.addWallBlock(0, (rows - 1) * 64, cols * 64, 64);
-    this.addWallBlock(0, 0, 64, rows * 64);
-    this.addWallBlock((cols - 1) * 64, 0, 64, rows * 64);
-
-    // Interior Partition Walls with Open Doorways!
-    const drawWallSpan = (c1: number, c2: number, row: number) => {
-      for (let c = c1; c <= c2; c++) {
-        this.add.image(c * 64 + 32, row * 64 + 32, 'tiles-home', 15).setDepth(row * 64 + 48);
-      }
-      this.addWallBlock(c1 * 64, row * 64 + 8, (c2 - c1 + 1) * 64, 48);
+    const roomBadge = (x: number, y: number, txt: string) => {
+      this.add.text(x, y, txt, {
+        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.72)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(30);
     };
-    const drawVertWall = (col: number, r1: number, r2: number) => {
-      for (let r = r1; r <= r2; r++) {
-        this.add.image(col * 64 + 32, r * 64 + 32, 'tiles-home', 15).setDepth(r * 64 + 48);
-      }
-      this.addWallBlock(col * 64 + 8, r1 * 64, 48, (r2 - r1 + 1) * 64);
-    };
+    roomBadge(245, 290, '🚪 玄關走廊');
+    roomBadge(820, 120, '🍳 廚房與飯廳');
+    roomBadge(1520, 115, '🛁 浴室與洗手間');
+    roomBadge(830, 610, '🛋️ 溫馨客廳');
+    roomBadge(310, 835, '🛏️ 小明睡房');
+    roomBadge(1620, 985, '🌿 陽光露台');
 
-    // Bathroom / Bedroom horizontal divider (doorway gap at cols 6..7)
-    drawWallSpan(1, 5, 10);
-    drawWallSpan(8, 9, 10);
-    // Left wing vertical divider (doorways at rows 5..6 for Bathroom & rows 15..16 for Bedroom!)
-    drawVertWall(9, 2, 4);
-    drawVertWall(9, 7, 14);
-    drawVertWall(9, 17, 20);
-    // Right wing vertical divider (doorways at rows 6..7 for Kitchen & rows 15..16 for Foyer/Balcony!)
-    drawVertWall(22, 2, 5);
-    drawVertWall(22, 8, 14);
-    drawVertWall(22, 17, 20);
-    // Kitchen / Foyer+Balcony horizontal divider (doorway at cols 24..25)
-    drawWallSpan(22, 23, 11);
-    drawWallSpan(26, 32, 11);
-
-    // Room Floor Labels
-    const roomSign = (tx: number, ty: number, txt: string) => {
-      this.add.text(tx * 64, ty * 64, txt, {
-        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.65)', padding: { x: 8, y: 3 }, fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(35);
-    };
-    roomSign(5, 4.2, '🛁 浴室與洗手間');
-    roomSign(5, 13.2, '🛏️ 小明睡房');
-    roomSign(15.5, 4.2, '🛋️ 溫馨客廳');
-    roomSign(27.5, 4.2, '🍳 廚房與飯廳');
-    roomSign(24.5, 13.2, '🚪 玄關走廊');
-    roomSign(30, 13.2, '🌿 陽光露台');
-
-    // --- 1. Bathroom Furniture & Tasks (Wash Hands & Brush Teeth) ---
-    this.add.image(2 * 64 + 32, 3 * 64 + 32, 'tiles-home', 40).setDepth(220); // Bathtub
-    this.add.image(7 * 64 + 32, 2 * 64 + 32, 'tiles-home', 31).setDepth(170); // Toilet
-    this.add.image(8 * 64 + 32, 2 * 64 + 32, 'tiles-home', 36).setDepth(170); // Washing Machine
-    this.addWallBlock(2 * 64, 3 * 64, 64, 56);
-    this.addWallBlock(7 * 64, 2 * 64, 128, 56);
-
-    const s1 = this.add.sprite(3 * 64 + 32, 2 * 64 + 36, 'tiles-home', gameState.isDone('wash_hands') ? 17 : 16).setDepth(175);
-    this.registerTask('wash_hands', s1.x, s1.y + 24, '🧼 按 A 進入「洗手泡泡滅菌戰」', s1, 17);
-
-    const s2 = this.add.sprite(4 * 64 + 32, 2 * 64 + 36, 'tiles-home', gameState.isDone('brush_teeth') ? 17 : 16).setDepth(175);
-    this.registerTask('brush_teeth', s2.x, s2.y + 24, '🪥 按 A 進入「護齒刷牙大掃除」', s2, 17);
-
-    // --- 2. Student Bedroom Furniture & Task (Trim Nails) ---
-    this.add.image(2 * 64 + 32, 12 * 64 + 32, 'tiles-home', 24).setDepth(800);
-    this.add.image(2 * 64 + 32, 13 * 64 + 32, 'tiles-home', 32).setDepth(860); // Bed
-    this.add.image(4 * 64 + 32, 11 * 64 + 32, 'tiles-home', 33).setDepth(740);
-    this.add.image(4 * 64 + 32, 12 * 64 + 32, 'tiles-home', 41).setDepth(800); // Wardrobe
-    this.add.image(6 * 64 + 32, 11 * 64 + 32, 'tiles-home', 30).setDepth(740);
-    this.add.image(6 * 64 + 32, 12 * 64 + 32, 'tiles-home', 38).setDepth(800); // Bookshelf
-    this.add.image(2 * 64 + 32, 17 * 64 + 32, 'tiles-home', 34).setDepth(1120); // PC Study Desk
-    this.add.image(3 * 64 + 32, 17 * 64 + 32, 'tiles-home', 35).setDepth(1120);
-    this.addWallBlock(2 * 64, 12 * 64, 64, 120);
-    this.addWallBlock(4 * 64, 11 * 64, 192, 112);
-
-    const nailDesk = this.add.sprite(6 * 64 + 32, 18 * 64 + 32, 'tiles-home', 18).setDepth(1180);
-    this.addWallBlock(6 * 64 + 6, 18 * 64 + 10, 52, 44);
-    this.registerTask('trim_nails', nailDesk.x, nailDesk.y, '💅 按 A 進入「精準剪甲節奏王」', nailDesk, 18);
-
-    // --- 3. Living Room Furniture + Patrolling Mom & Sister NPCs ---
-    this.add.image(15 * 64 + 32, 3 * 64 + 32, 'tiles-home', 39).setDepth(230); // Widescreen TV
-    this.add.image(15 * 64 + 32, 7 * 64 + 32, 'tiles-home', 25).setDepth(480); // Sofa L
-    this.add.image(16 * 64 + 32, 7 * 64 + 32, 'tiles-home', 26).setDepth(480); // Sofa R
-    this.add.image(15 * 64 + 64, 9 * 64 + 32, 'tiles-home', 42).setDepth(600); // Coffee Table
-    this.add.image(11 * 64 + 32, 3 * 64 + 32, 'tiles-home', 43).setDepth(230);
-    this.add.image(20 * 64 + 32, 3 * 64 + 32, 'tiles-home', 43).setDepth(230);
-    this.addWallBlock(15 * 64, 7 * 64 + 8, 128, 48);
-
-    const mom = this.add.sprite(13 * 64 + 32, 11 * 64 + 32, 'npcs', 4).setDepth(740).play('npc-mom-walk');
-    this.tweens.add({ targets: mom, x: 18 * 64 + 32, duration: 3600, yoyo: true, repeat: -1 });
-    this.hotspots.push({ id: 'talk_mom', x: 15 * 64 + 32, y: 11 * 64 + 32, radius: 130, label: '👩 按 A 與巡視中的媽媽對話' });
-
-    const sis = this.add.sprite(18 * 64 + 32, 15 * 64 + 32, 'npcs', 12).setDepth(990).play('npc-girl-walk');
-    this.tweens.add({ targets: sis, y: 17 * 64 + 32, duration: 2600, yoyo: true, repeat: -1 });
-
-    // --- 4. Kitchen & Dining Room + Cover Food Task ---
-    this.add.image(25 * 64 + 32, 2 * 64 + 32, 'tiles-home', 27).setDepth(170);
-    this.add.image(26 * 64 + 32, 2 * 64 + 32, 'tiles-home', 28).setDepth(170);
-    this.add.image(28 * 64 + 32, 2 * 64 + 32, 'tiles-home', 29).setDepth(180);
-    this.add.image(28 * 64 + 32, 3 * 64 + 32, 'tiles-home', 37).setDepth(230);
-    this.add.image(30 * 64 + 32, 3 * 64 + 32, 'tiles-home', 23).setDepth(220); // Covered Bin
-    this.addWallBlock(25 * 64, 2 * 64, 256, 96);
-
-    const dTable = this.add.sprite(27 * 64 + 32, 7 * 64 + 32, 'tiles-home', gameState.isDone('cover_food') ? 20 : 19).setDepth(480);
-    this.add.image(26 * 64 + 32, 7 * 64 + 32, 'tiles-home', 35).setDepth(475);
-    this.add.image(28 * 64 + 32, 7 * 64 + 32, 'tiles-home', 35).setDepth(475);
-    this.addWallBlock(27 * 64 + 6, 7 * 64 + 8, 52, 46);
-    this.registerTask('cover_food', dTable.x, dTable.y, '🍲 按 A 進入「餐桌防鼠保衛戰」', dTable, 20);
-
-    // --- 5. Entrance Foyer & Exit Door (cols 23..26, rows 12..20) ---
-    this.add.image(24 * 64 + 32, 19 * 64 + 32, 'tiles-home', 14).setDepth(40);
-    this.add.image(24 * 64 + 32, 20 * 64 + 16, 'tiles-home', 12).setDepth(1320);
-    const doorEmote = this.add.sprite(24 * 64 + 32, 18 * 64 + 36, 'npcs', 29).setDepth(2500);
+    // --- Zone A: Entrance Foyer (Top-Left) & Exit Door to HK Street ---
+    const frontDoor = this.addHomeProp('door', 215, 138, 1.35, false, 10);
+    this.addHomeProp('plant_whitepot', 335, 185, 1.25, true);
+    const doorEmote = this.add.sprite(215, 58, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: doorEmote, y: doorEmote.y - 8, duration: 650, yoyo: true, repeat: -1 });
-    this.hotspots.push({ id: 'go_street', x: 24 * 64 + 32, y: 19 * 64 + 20, radius: 92, label: '🚪 按 A 出門前往「香港社區街道」', emote: doorEmote });
+    this.registerInteractiveHotspot({
+      id: 'go_street', x: 215, y: 185, radius: 115,
+      label: '🚪 按 A 或輕觸大門前往「香港社區街道」',
+      sprite: frontDoor, emote: doorEmote
+    });
 
-    // --- 6. Sunny Balcony & Flowerpot Task (cols 27..32, rows 12..20) ---
-    for (let c = 27; c <= 32; c++) {
-      this.add.image(c * 64 + 32, 19 * 64 + 40, 'tiles-home', 44).setDepth(1260);
+    // --- Zone B: Kitchen & Dining Room (Top-Center) + Task 4: Cover Food ---
+    this.addHomeProp('kitchen_top', 720, 95, 1.35, false);
+    this.addHomeProp('kitchen_bottom', 720, 195, 1.35, true);
+    this.addHomeProp('chair_side', 655, 385, 1.3, false);
+    this.addHomeProp('chair_side', 945, 385, 1.3, false).setFlipX(true);
+    const foodDone = gameState.isDone('cover_food');
+    const cakeTable = this.addHomeProp(foodDone ? 'dining_table' : 'cake_table', 800, 385, 1.38, true);
+    if (foodDone) {
+      this.add.image(800, 355, 'mg', 13).setScale(1.15).setDepth(cakeTable.depth + 5);
     }
-    this.add.image(28 * 64 + 32, 15 * 64 + 32, 'tiles-home', 43).setDepth(990);
-    const pot = this.add.sprite(30 * 64 + 32, 16 * 64 + 32, 'tiles-home', gameState.isDone('clear_saucer') ? 22 : 21).setDepth(1050);
-    this.registerTask('clear_saucer', pot.x, pot.y, '🪴 按 A 進入「倒積水滅孑孓挑戰」', pot, 22);
+    this.registerTaskHotspot('cover_food', 800, 405, '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable);
+
+    // --- Zone C: Dual Aqua Bathrooms (Right Wing) + Tasks 1 & 2: Wash Hands & Brush Teeth ---
+    this.addHomeProp('shower', 1295, 210, 1.32, true);
+    this.addHomeProp('mirror', 1475, 145, 1.35, false);
+    const sinkSpr = this.addHomeProp('sink_vanity', 1475, 255, 1.35, true);
+    this.registerTaskHotspot('wash_hands', 1475, 285, '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr);
+
+    this.addHomeProp('mirror', 1690, 145, 1.35, false);
+    const towelSpr = this.addHomeProp('towel', 1775, 185, 1.35, false);
+    const toothVanity = this.addHomeProp('sink_vanity', 1690, 255, 1.35, true);
+    void towelSpr;
+    this.registerTaskHotspot('brush_teeth', 1690, 285, '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity);
+
+    // Lower Bathroom fixtures
+    this.addHomeProp('toilet', 1310, 690, 1.32, true);
+    this.addHomeProp('bathtub', 1640, 725, 1.35, true);
+
+    // --- Zone D: Cozy Living Room (Center) + Mom & Sister NPCs ---
+    this.addHomeProp('green_rug', 835, 920, 1.65, false, -500);
+    this.addHomeProp('tv_cabinet', 835, 695, 1.32, true);
+    this.addHomeProp('sofa_2seat', 835, 1020, 1.32, true);
+    this.addHomeProp('armchair_left', 625, 945, 1.25, true);
+    this.addHomeProp('armchair_right', 1045, 945, 1.25, true);
+
+    const mom = this.add.sprite(740, 825, 'npcs', 4).setDepth(840).play('npc-mom-walk');
+    this.tweens.add({ targets: mom, x: 960, duration: 3600, yoyo: true, repeat: -1 });
+    this.registerInteractiveHotspot({
+      id: 'talk_mom', x: 850, y: 825, radius: 135,
+      label: '👩 按 A 與媽媽對話查看衛生提示', sprite: mom
+    });
+
+    const sis = this.add.sprite(1080, 780, 'npcs', 12).setDepth(790).play('npc-girl-walk');
+    this.tweens.add({ targets: sis, y: 880, duration: 2600, yoyo: true, repeat: -1 });
+
+    // --- Zone E: Xiao Ming's Bedroom (Bottom-Left) + Task 3: Trim Nails ---
+    this.addHomeProp('double_bed', 195, 1030, 1.38, true);
+    this.addHomeProp('nightstand', 340, 965, 1.25, true);
+    this.addHomeProp('toy_box', 195, 1245, 1.3, true);
+    this.addHomeProp('chair_front', 475, 1185, 1.18, false);
+    const deskSpr = this.addHomeProp('computer_desk', 475, 1120, 1.38, true);
+    this.registerTaskHotspot('trim_nails', 475, 1145, '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr);
+
+    // --- Zone F: Sunny Balcony (Bottom-Right) + Task 5: Clear Flowerpot Saucer ---
+    this.addHomeProp('balcony_railing', 1515, 1305, 1.4, true);
+    this.addHomeProp('balcony_railing', 1735, 1305, 1.4, true);
+    this.addHomeProp('plant_large', 1495, 1135, 1.32, true);
+    this.addHomeProp('plant_small', 1765, 1175, 1.32, true);
+    const potSpr = this.addHomeProp('plant_whitepot', 1640, 1155, 1.45, true);
+    this.registerTaskHotspot('clear_saucer', 1640, 1175, '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr);
   }
 
   // ==========================================================================
-  // Expanded Hong Kong Street, Alley & Park (38x22 = 2432x1408 scrolling world!)
+  // 2. Upgraded Full-Canvas HD Hong Kong Street & Choi Wan Park Scene
   // ==========================================================================
-  private buildExpandedStreet(cols: number, rows: number): void {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = c * 64 + 32, y = r * 64 + 32;
-        if (c <= 9) {
-          const isPath = (c === 5 && r >= 3 && r <= 18) || (r === 10 && c >= 3 && c <= 9);
-          this.add.image(x, y, 'tiles-street', isPath ? 7 : ((r + c) % 3 === 0 ? 1 : 0));
-        } else if ((c === 10 || c === 11) && r <= 9) {
-          this.add.image(x, y, 'tiles-street', 4); // Dark back-alley cobblestone
-        } else if (r <= 1 && c >= 12) {
-          this.add.image(x, y, 'tiles-home', 8);
-        } else if (r === 2 && c >= 12) {
-          let bf = 8;
-          if (c === 16) bf = gameState.isDone('spray_mosquito') ? 10 : 9; // Dripping AC
-          else if (c === 19 || c === 20) bf = 11; // Burger Shop Sign
-          else if (c === 25 || c === 26) bf = 27; // HK Cha Chaan Teng Sign (冰室)
-          else if (c === 31 || c === 32) bf = 28; // HK Pharmacy Sign (藥房)
-          this.add.image(x, y, 'tiles-street', bf);
-        } else if (r === 3 && c >= 12) {
-          let sf = 15;
-          if (c === 13 || c === 14) sf = 13; // Mansion Gate back to Home
-          else if (c === 19 || c === 20 || c === 25 || c === 26 || c === 31 || c === 32) sf = 12;
-          else if (c === 22) sf = gameState.isDone('seal_rathole') ? 15 : 14; // Rat Hole!
-          this.add.image(x, y, 'tiles-street', sf);
-        } else if (r <= 12) {
-          this.add.image(x, y, 'tiles-street', 2); // HK Pink-Brick Sidewalk
-        } else if (r === 13 && c >= 10) {
-          this.add.image(x, y, 'tiles-street', 3); // Yellow Tactile Curb
-        } else {
-          const isZebra = (c >= 17 && c <= 19) || (c >= 29 && c <= 31);
-          const isDrain = r === 14 && (c === 15 || c === 27);
-          this.add.image(x, y, 'tiles-street', isDrain ? 29 : (isZebra ? 6 : 5));
-        }
-      }
-    }
+  private buildHdStreetScene(worldW: number, worldH: number): void {
+    const bg = this.add.image(0, 0, 'map-street').setOrigin(0, 0).setDepth(0);
+    bg.setDisplaySize(worldW, worldH);
 
-    this.addWallBlock(12 * 64, 0, (cols - 12) * 64, 256);
-    this.addWallBlock(10 * 64, 14 * 64, (cols - 10) * 64, 8 * 64);
+    // Keep hero off building roofs & busy車道 while allowing full park, sidewalk & bridge exploration
+    this.addFootCollider(1320, 145, 920, 220);
 
-    // Park HGSS Layered Trees, Benches & Falling Leaves
-    const addTree = (tc: number, tr: number) => {
-      const d = (tr + 1) * 64 + 32;
-      this.add.image(tc * 64 + 32, tr * 64 + 32, 'tiles-street', 24).setDepth(d);
-      this.add.image((tc + 1) * 64 + 32, tr * 64 + 32, 'tiles-street', 25).setDepth(d);
-      this.add.image(tc * 64 + 32, (tr + 1) * 64 + 32, 'tiles-street', 32).setDepth(d);
-      this.add.image((tc + 1) * 64 + 32, (tr + 1) * 64 + 32, 'tiles-street', 33).setDepth(d);
-      this.addWallBlock(tc * 64 + 18, (tr + 1) * 64 + 10, 92, 46);
+    const streetBadge = (x: number, y: number, txt: string) => {
+      this.add.text(x, y, txt, {
+        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.75)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
+      }).setOrigin(0.5).setDepth(30);
     };
-    addTree(1, 1); addTree(7, 1); addTree(1, 7); addTree(1, 14); addTree(7, 15);
+    streetBadge(310, 210, '🌳 彩雲社區公園');
+    streetBadge(635, 190, '🌉 行人天橋往返家居');
+    streetBadge(1380, 290, '🍜 香港味道茶餐廳 · 興發大排檔');
+    streetBadge(1890, 455, '🏛️ 河道石拱橋廣場');
 
-    this.add.image(3 * 64 + 32, 11 * 64 + 32, 'tiles-street', 37).setDepth(740);
-    this.add.image(4 * 64 + 32, 11 * 64 + 32, 'tiles-street', 38).setDepth(740);
-
-    // Streetlamps, Guardrails & 3-Color Recycling Station
-    [12, 23, 34].forEach(lc => {
-      this.add.image(lc * 64 + 32, 11 * 64 + 32, 'tiles-street', 26).setDepth(800);
-      this.add.image(lc * 64 + 32, 12 * 64 + 32, 'tiles-street', 34).setDepth(800);
+    // Return Home Entrance by Footbridge
+    const homeEmote = this.add.sprite(635, 225, 'npcs', 29).setDepth(4200);
+    this.tweens.add({ targets: homeEmote, y: homeEmote.y - 7, duration: 620, yoyo: true, repeat: -1 });
+    const gateDoor = this.addHomeProp('door', 635, 295, 1.15, false);
+    this.registerInteractiveHotspot({
+      id: 'go_home', x: 635, y: 325, radius: 115,
+      label: '🏠 按 A 或輕觸返回「高清溫馨家居」', sprite: gateDoor, emote: homeEmote
     });
-    for (let rc = 11; rc <= 36; rc++) {
-      if (rc >= 17 && rc <= 19) continue;
-      if (rc >= 29 && rc <= 31) continue;
-      this.add.image(rc * 64 + 32, 13 * 64 + 18, 'tiles-street', 23).setDepth(860);
-    }
-    this.add.image(33 * 64 + 32, 5 * 64 + 32, 'tiles-street', 19).setDepth(350);
-    this.add.image(34 * 64 + 32, 5 * 64 + 32, 'tiles-street', 20).setDepth(350);
 
-    // Mansion Gate back to Home
-    this.hotspots.push({ id: 'go_home', x: 13 * 64 + 64, y: 4 * 64 + 24, radius: 86, label: '🏠 按 A 返回「六大房間溫馨家居」' });
+    // Patrolling Pedestrian NPC along HK Pink-Brick Sidewalk
+    const man = this.add.sprite(980, 640, 'npcs', 8).setDepth(660).play('npc-man-walk');
+    this.tweens.add({ targets: man, x: 1580, duration: 4800, yoyo: true, repeat: -1 });
 
-    // Patrolling Pedestrian NPC
-    const man = this.add.sprite(20 * 64, 9 * 64, 'npcs', 8).setDepth(590).play('npc-man-walk');
-    this.tweens.add({ targets: man, x: 28 * 64, duration: 4800, yoyo: true, repeat: -1 });
-
-    // Task 6: Recycle Plastic Bottles in Park & Tidy Overflowing Orange Bin
+    // Task 6: 3-Color Recycling Station in Choi Wan Park
     const recDone = gameState.isDone('recycle_bottles');
-    const bottles = this.add.sprite(6 * 64 + 32, 9 * 64 + 32, 'tiles-street', recDone ? 19 : 21).setDepth(600);
-    this.add.sprite(24 * 64 + 32, 11 * 64 + 32, 'tiles-street', recDone ? 17 : 16).setDepth(730);
-    this.registerTask('recycle_bottles', bottles.x, bottles.y, '♻️ 按 A 進入「香港三色回收快手」', bottles, 19);
+    this.add.image(330, 650, 'mg', 23).setScale(1.25).setDepth(655);
+    this.add.image(395, 650, 'mg', 24).setScale(1.25).setDepth(655);
+    this.add.image(460, 650, 'mg', 25).setScale(1.25).setDepth(655);
+    const bottles = this.add.sprite(395, 715, 'tiles-street', recDone ? 19 : 21).setScale(1.25).setDepth(720);
+    this.registerTaskHotspot('recycle_bottles', 395, 715, '♻️ 按 A 或輕觸進入「香港三色回收快手」', bottles);
 
-    // Task 7: Dripping AC Animated Droplets + Mosquito Bushes
+    // Task 7: Dripping Tang Lau AC + Aedes Mosquito Bushes
     const mosDone = gameState.isDone('spray_mosquito');
-    this.add.image(6 * 64 + 32, 5 * 64 + 32, 'tiles-street', 35).setDepth(350);
-    const puddle = this.add.sprite(16 * 64 + 32, 4 * 64 + 28, 'tiles-street', mosDone ? 2 : 22).setDepth(265);
+    const acUnit = this.add.sprite(1040, 320, 'tiles-street', mosDone ? 10 : 9).setScale(1.35).setDepth(380);
+    const puddle = this.add.sprite(1040, 445, 'tiles-street', mosDone ? 19 : 22).setScale(1.25).setDepth(440);
+    if (mosDone) puddle.setVisible(false);
     if (!mosDone) {
-      this.add.sprite(6 * 64 + 32, 4 * 64 + 40, 'npcs', 20).setDepth(420).play('mosquito-fly');
-      this.add.sprite(16 * 64 + 32, 3 * 64 + 52, 'npcs', 20).setDepth(420).play('mosquito-fly');
+      this.add.sprite(985, 395, 'npcs', 20).setDepth(490).play('mosquito-fly');
+      this.add.sprite(1095, 415, 'npcs', 20).setDepth(490).play('mosquito-fly');
       this.time.addEvent({
         delay: 650, loop: true,
         callback: () => {
           if (gameState.currentMap !== 'street' || gameState.isDone('spray_mosquito')) return;
-          const drop = this.add.rectangle(16 * 64 + 32, 2 * 64 + 48, 6, 10, 0x38bdf8).setDepth(410);
-          this.tweens.add({ targets: drop, y: 4 * 64 + 28, alpha: 0.2, duration: 500, onComplete: () => drop.destroy() });
+          const drop = this.add.rectangle(1040, 345, 6, 10, 0x38bdf8).setDepth(470);
+          this.tweens.add({ targets: drop, y: 445, alpha: 0.2, duration: 480, onComplete: () => drop.destroy() });
         }
       });
     }
-    this.registerTask('spray_mosquito', puddle.x, puddle.y, '🦟 按 A 進入「冷氣止漏 ＋ DEET 驅蚊射擊」', puddle, 2);
+    this.registerTaskHotspot('spray_mosquito', 1040, 445, '🦟 按 A 或輕觸進入「冷氣止漏 ＋ DEET 驅蚊射擊」', acUnit);
 
-    // Task 8: Alley Garbage & Burger Shop Rat Hole
+    // Task 8: Cha Chaan Teng / Dai Pai Dong Wall Rat Hole
     const ratDone = gameState.isDone('seal_rathole');
-    const rHole = this.add.sprite(22 * 64 + 32, 3 * 64 + 32, 'tiles-street', ratDone ? 15 : 14).setDepth(210);
+    const rHole = this.add.sprite(1445, 415, 'tiles-street', ratDone ? 15 : 14).setScale(1.35).setDepth(425);
     if (!ratDone) {
-      this.add.image(10 * 64 + 48, 5 * 64 + 32, 'tiles-street', 18).setDepth(350);
-      const rat = this.add.sprite(10 * 64 + 32, 7 * 64 + 16, 'npcs', 24).setDepth(470).play('rat-scurry');
-      this.tweens.add({ targets: rat, x: 11 * 64 + 32, duration: 950, yoyo: true, repeat: -1 });
+      const rat = this.add.sprite(1380, 465, 'npcs', 24).setDepth(480).play('rat-scurry');
+      this.tweens.add({ targets: rat, x: 1510, duration: 950, yoyo: true, repeat: -1 });
     }
-    this.registerTask('seal_rathole', 22 * 64 + 32, 4 * 64 + 20, '🕳️ 按 A 進入「防鼠三部曲：封堵鼠洞」', rHole, 15);
+    this.registerTaskHotspot('seal_rathole', 1445, 440, '🕳️ 按 A 或輕觸進入「防鼠三部曲：封堵鼠洞」', rHole);
 
-    // Task 9: FEHD Officer Assessment
-    const fehd = this.add.sprite(31 * 64 + 32, 7 * 64 + 32, 'npcs', 0).setDepth(480).play('npc-fehd-walk');
-    const fEmote = this.add.sprite(fehd.x, fehd.y - 48, 'npcs', 29).setDepth(2500);
+    // Task 9: FEHD Officer Final Assessment at Canal Bridge Plaza
+    const fehd = this.add.sprite(1845, 560, 'npcs', 0).setScale(1.25).setDepth(580).play('npc-fehd-walk');
+    const fEmote = this.add.sprite(fehd.x, fehd.y - 54, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: fEmote, y: fEmote.y - 7, duration: 600, yoyo: true, repeat: -1 });
-    this.hotspots.push({ id: 'fehd_quiz', x: fehd.x, y: fehd.y, radius: 95, label: '👮 按 A 接受「食環署主任常識總考核」', emote: fEmote });
+    this.registerInteractiveHotspot({
+      id: 'fehd_quiz', x: fehd.x, y: fehd.y, radius: 115,
+      label: '👮 按 A 或輕觸接受「食環署主任常識總考核」', sprite: fehd, emote: fEmote
+    });
   }
 
-  private registerTask(id: string, x: number, y: number, label: string, sprite: Phaser.GameObjects.Sprite, cleanFrame: number): void {
+  private registerInteractiveHotspot(h: MapHotspot): void {
+    if (h.sprite) {
+      h.sprite.setInteractive({ useHandCursor: true });
+      h.sprite.on('pointerdown', () => {
+        if (this.dialogueOpen) return;
+        this.activeHotspot = h;
+        this.handleActionButton();
+      });
+    }
+    this.hotspots.push(h);
+  }
+
+  private registerTaskHotspot(
+    id: string,
+    x: number,
+    y: number,
+    label: string,
+    sprite: Phaser.GameObjects.Sprite | Phaser.GameObjects.Image
+  ): void {
     const done = gameState.isDone(id);
-    const emote = this.add.sprite(x, y - 48, 'npcs', done ? 30 : 28).setDepth(2600);
+    const ring = this.add.circle(x, y + 14, 34, done ? 0x10b981 : 0xfde047, 0.22)
+      .setStrokeStyle(3, done ? 0x34d399 : 0xfacc15)
+      .setDepth(25);
+    this.tweens.add({ targets: ring, scale: { from: 0.92, to: 1.12 }, alpha: { from: 0.18, to: 0.38 }, duration: 850, yoyo: true, repeat: -1 });
+
+    const emote = this.add.sprite(x, y - 58, 'npcs', done ? 30 : 28).setDepth(4200);
     this.tweens.add({ targets: emote, y: emote.y - 7, duration: 580, yoyo: true, repeat: -1 });
-    this.hotspots.push({ id, x, y, radius: 92, label, sprite, cleanFrame, emote });
+
+    this.registerInteractiveHotspot({ id, x, y, radius: 115, label, sprite, ring, emote });
   }
 
   private launchArcadeMinigame(taskId: string, onWon: (medal: MedalRank, bonus: number) => void): void {
@@ -411,8 +348,8 @@ export class ExploreScene extends Phaser.Scene {
     if (h.id === 'talk_mom') {
       const rem = 5 - gameState.completedCount('home');
       this.openDialogue('媽媽', rem > 0
-        ? `屋企仲有 ${rem} 項衛生任務未做完呀！記得去齊【浴室】、【小明睡房】、【飯廳】同【陽光露台】看看！`
-        : '全屋六個區域都乾乾淨淨！快啲由右下【玄關走廊】大門去香港社區街道幫食環署主任啦！');
+        ? `屋企仲有 ${rem} 項衛生任務未做完呀！記得去齊【右上浴室】、【左下睡房】、【正上飯廳】同【右下陽光露台】看看！`
+        : '全屋都乾乾淨淨！快啲由左上【玄關大門】去香港社區街道幫食環署主任啦！');
       return;
     }
     if (h.id === 'go_street') {
@@ -422,7 +359,7 @@ export class ExploreScene extends Phaser.Scene {
       } else {
         sound.pop();
         this.buildWorld('street');
-        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！請幫忙到左邊公園做三色回收、到街上修好滴水冷氣與滅蚊、封好快餐店鼠洞，最後找我考核！');
+        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！請幫忙到左邊公園做三色回收、到唐樓修好滴水冷氣與滅蚊、封好茶餐廳外牆鼠洞，最後到拱橋廣場找我考核！');
       }
       return;
     }
@@ -446,12 +383,7 @@ export class ExploreScene extends Phaser.Scene {
     if (gameState.isDone(h.id)) return;
     this.launchArcadeMinigame(h.id, (medal, bonus) => {
       const doneTask = gameState.completeTask(h.id, medal, bonus);
-      if (h.id === 'spray_mosquito' || h.id === 'seal_rathole' || h.id === 'recycle_bottles') {
-        this.buildWorld(gameState.currentMap);
-      } else {
-        if (h.sprite && h.cleanFrame !== undefined) h.sprite.setFrame(h.cleanFrame);
-        if (h.emote) h.emote.setFrame(30);
-      }
+      this.buildWorld(gameState.currentMap);
       this.celebrateHero();
       this.refreshHud();
       if (doneTask) this.openDialogue(`🏅 完成：${doneTask.title}`, doneTask.summary);
@@ -476,18 +408,18 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   private detectRoomName(): string {
-    const cx = this.hero.x / 64, cy = this.hero.y / 64;
+    const x = this.hero.x, y = this.hero.y;
     if (gameState.currentMap === 'home') {
-      if (cx <= 9 && cy <= 10) return '溫馨家居 · 🛁 浴室';
-      if (cx <= 9 && cy > 10) return '溫馨家居 · 🛏️ 小明睡房';
-      if (cx >= 22 && cy <= 11) return '溫馨家居 · 🍳 廚房與飯廳';
-      if (cx >= 27 && cy > 11) return '溫馨家居 · 🌿 陽光露台';
-      if (cx >= 22 && cy > 11) return '溫馨家居 · 🚪 玄關走廊';
+      if (x < 460 && y < 520) return '溫馨家居 · 🚪 玄關走廊';
+      if (x >= 460 && x < 1180 && y < 520) return '溫馨家居 · 🍳 廚房與飯廳';
+      if (x >= 1180 && y < 920) return '溫馨家居 · 🛁 浴室與洗手間';
+      if (x < 620 && y >= 760) return '溫馨家居 · 🛏️ 小明睡房';
+      if (x >= 1340 && y >= 920) return '溫馨家居 · 🌿 陽光露台';
       return '溫馨家居 · 🛋️ 客廳';
     }
-    if (cx <= 9) return '香港社區 · 🌳 彩雲公園';
-    if (cx <= 11 && cy <= 9) return '香港社區 · ⚠️ 大廈後巷';
-    return '香港社區 · 🏙️ 商舖行人路';
+    if (x < 680) return '香港社區 · 🌳 彩雲公園';
+    if (x >= 1720) return '香港社區 · 🏛️ 河道拱橋廣場';
+    return '香港社區 · 🍜 茶餐廳商舖街';
   }
 
   private refreshHud(): void {
@@ -524,7 +456,7 @@ export class ExploreScene extends Phaser.Scene {
     }
 
     const mv = this.joystick.getMovementVector();
-    const speed = mv.sprint ? 320 : 215;
+    const speed = mv.sprint ? 330 : 220;
     this.hero.setVelocity(mv.x * speed, mv.y * speed);
 
     if (Math.hypot(mv.x, mv.y) > 0.08) {
@@ -534,7 +466,7 @@ export class ExploreScene extends Phaser.Scene {
       this.trail.push({ x: this.hero.x, y: this.hero.y });
       if (this.trail.length > 16) {
         const pt = this.trail.shift()!;
-        this.companion.setPosition(pt.x, pt.y + 4).setDepth(pt.y);
+        this.companion.setPosition(pt.x, pt.y + 8).setDepth(pt.y);
       }
 
       this.stepTimer += delta;
@@ -543,12 +475,11 @@ export class ExploreScene extends Phaser.Scene {
         sound.step();
       }
 
-      // Sprint dust puffs animation behind shoes!
       if (mv.sprint) {
         this.dustTimer += delta;
         if (this.dustTimer > 95) {
           this.dustTimer = 0;
-          const dust = this.add.rectangle(this.hero.x + (Math.random() - 0.5) * 14, this.hero.y + 24, 7, 7, 0xe2e8f0, 0.8).setDepth(this.hero.y);
+          const dust = this.add.rectangle(this.hero.x + (Math.random() - 0.5) * 14, this.hero.y + 34, 7, 7, 0xe2e8f0, 0.8).setDepth(this.hero.y);
           this.tweens.add({ targets: dust, y: dust.y - 10, alpha: 0, scale: 0.3, duration: 280, onComplete: () => dust.destroy() });
         }
       }
@@ -556,7 +487,7 @@ export class ExploreScene extends Phaser.Scene {
       this.hero.play(`hero-idle-${this.facing}`, true);
     }
 
-    this.hero.setDepth(this.hero.y + 26);
+    this.hero.setDepth(this.hero.y + 34);
     document.getElementById('hud-location-tag')!.textContent = `📍 ${this.detectRoomName()}`;
 
     let nearest: MapHotspot | null = null;
@@ -568,7 +499,7 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.activeHotspot = nearest;
     if (nearest) {
-      this.promptTag.setText(nearest.label).setPosition(nearest.x, nearest.y - 74).setVisible(true);
+      this.promptTag.setText(nearest.label).setPosition(nearest.x, nearest.y - 82).setVisible(true);
     } else {
       this.promptTag.setVisible(false);
     }
