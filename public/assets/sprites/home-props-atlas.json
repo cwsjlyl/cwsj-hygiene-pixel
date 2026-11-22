@@ -1,0 +1,192 @@
+{
+  "frames": {
+    "double_bed": {
+      "frame": { "x": 4, "y": 4, "w": 116, "h": 154 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 116, "h": 154 },
+      "sourceSize": { "w": 116, "h": 154 }
+    },
+    "tv_cabinet": {
+      "frame": { "x": 126, "y": 4, "w": 165, "h": 146 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 165, "h": 146 },
+      "sourceSize": { "w": 165, "h": 146 }
+    },
+    "door": {
+      "frame": { "x": 297, "y": 4, "w": 113, "h": 139 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 113, "h": 139 },
+      "sourceSize": { "w": 113, "h": 139 }
+    },
+    "shower": {
+      "frame": { "x": 416, "y": 4, "w": 110, "h": 130 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 110, "h": 130 },
+      "sourceSize": { "w": 110, "h": 130 }
+    },
+    "sofa_2seat": {
+      "frame": { "x": 532, "y": 4, "w": 201, "h": 130 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 201, "h": 130 },
+      "sourceSize": { "w": 201, "h": 130 }
+    },
+    "chair_front": {
+      "frame": { "x": 739, "y": 4, "w": 73, "h": 127 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 73, "h": 127 },
+      "sourceSize": { "w": 73, "h": 127 }
+    },
+    "cake_table": {
+      "frame": { "x": 818, "y": 4, "w": 175, "h": 125 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 175, "h": 125 },
+      "sourceSize": { "w": 175, "h": 125 }
+    },
+    "green_rug": {
+      "frame": { "x": 4, "y": 164, "w": 177, "h": 123 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 177, "h": 123 },
+      "sourceSize": { "w": 177, "h": 123 }
+    },
+    "plant_large": {
+      "frame": { "x": 187, "y": 164, "w": 88, "h": 122 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 88, "h": 122 },
+      "sourceSize": { "w": 88, "h": 122 }
+    },
+    "dining_table": {
+      "frame": { "x": 281, "y": 164, "w": 185, "h": 121 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 185, "h": 121 },
+      "sourceSize": { "w": 185, "h": 121 }
+    },
+    "armchair_left": {
+      "frame": { "x": 472, "y": 164, "w": 102, "h": 119 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 102, "h": 119 },
+      "sourceSize": { "w": 102, "h": 119 }
+    },
+    "armchair_right": {
+      "frame": { "x": 580, "y": 164, "w": 102, "h": 118 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 102, "h": 118 },
+      "sourceSize": { "w": 102, "h": 118 }
+    },
+    "sink_vanity": {
+      "frame": { "x": 688, "y": 164, "w": 122, "h": 116 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 122, "h": 116 },
+      "sourceSize": { "w": 122, "h": 116 }
+    },
+    "computer_desk": {
+      "frame": { "x": 816, "y": 164, "w": 108, "h": 116 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 108, "h": 116 },
+      "sourceSize": { "w": 108, "h": 116 }
+    },
+    "toilet": {
+      "frame": { "x": 930, "y": 164, "w": 64, "h": 115 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 64, "h": 115 },
+      "sourceSize": { "w": 64, "h": 115 }
+    },
+    "nightstand": {
+      "frame": { "x": 4, "y": 293, "w": 85, "h": 104 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 85, "h": 104 },
+      "sourceSize": { "w": 85, "h": 104 }
+    },
+    "chair_side": {
+      "frame": { "x": 95, "y": 293, "w": 56, "h": 102 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 56, "h": 102 },
+      "sourceSize": { "w": 56, "h": 102 }
+    },
+    "bathtub": {
+      "frame": { "x": 157, "y": 293, "w": 149, "h": 98 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 149, "h": 98 },
+      "sourceSize": { "w": 149, "h": 98 }
+    },
+    "plant_whitepot": {
+      "frame": { "x": 312, "y": 293, "w": 61, "h": 89 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 61, "h": 89 },
+      "sourceSize": { "w": 61, "h": 89 }
+    },
+    "toy_box": {
+      "frame": { "x": 379, "y": 293, "w": 83, "h": 81 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 83, "h": 81 },
+      "sourceSize": { "w": 83, "h": 81 }
+    },
+    "plant_small": {
+      "frame": { "x": 468, "y": 293, "w": 50, "h": 73 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 50, "h": 73 },
+      "sourceSize": { "w": 50, "h": 73 }
+    },
+    "kitchen_top": {
+      "frame": { "x": 524, "y": 293, "w": 175, "h": 69 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 175, "h": 69 },
+      "sourceSize": { "w": 175, "h": 69 }
+    },
+    "kitchen_bottom": {
+      "frame": { "x": 705, "y": 293, "w": 175, "h": 68 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 175, "h": 68 },
+      "sourceSize": { "w": 175, "h": 68 }
+    },
+    "balcony_railing": {
+      "frame": { "x": 4, "y": 403, "w": 155, "h": 63 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 155, "h": 63 },
+      "sourceSize": { "w": 155, "h": 63 }
+    },
+    "mirror": {
+      "frame": { "x": 165, "y": 403, "w": 56, "h": 52 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 56, "h": 52 },
+      "sourceSize": { "w": 56, "h": 52 }
+    },
+    "towel": {
+      "frame": { "x": 227, "y": 403, "w": 57, "h": 44 },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": { "x": 0, "y": 0, "w": 57, "h": 44 },
+      "sourceSize": { "w": 57, "h": 44 }
+    }
+  },
+  "meta": {
+    "image": "home-props-atlas.png",
+    "format": "RGBA8888",
+    "size": { "w": 1024, "h": 470 },
+    "scale": "1"
+  }
+}
