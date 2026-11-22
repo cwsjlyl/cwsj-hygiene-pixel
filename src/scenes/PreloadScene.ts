@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { sanitizeSpriteTextureAlpha, syncHeroPortraitToDom } from '../gfx/CrispVisuals';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -7,40 +8,57 @@ export class PreloadScene extends Phaser.Scene {
 
   preload(): void {
     const { width, height } = this.scale;
-    const bg = this.add.rectangle(width / 2, height / 2, 440, 26, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
-    const fill = this.add.rectangle(width / 2 - 214, height / 2, 4, 18, 0x10b981).setOrigin(0, 0.5);
-    const label = this.add.text(width / 2, height / 2 - 38, '載入 EPX 高清像素圖集與音樂引擎...', {
-      fontSize: '20px', color: '#fde047', fontStyle: 'bold'
+    const bg = this.add.rectangle(width / 2, height / 2, 460, 26, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
+    const fill = this.add.rectangle(width / 2 - 224, height / 2, 4, 18, 0x10b981).setOrigin(0, 0.5);
+    const label = this.add.text(width / 2, height / 2 - 38, '載入高清家居與香港街道地圖及去背 Sprite 圖集...', {
+      fontSize: '19px', color: '#fde047', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.load.on('progress', (v: number) => { fill.width = 428 * v; });
+    this.load.on('progress', (v: number) => { fill.width = 448 * v; });
 
-    this.load.spritesheet('hero', './assets/sprites/char-student-boy.png', { frameWidth: 64, frameHeight: 64 });
+    // Full-scene HD pixel maps
+    this.load.image('map-home', './assets/maps/map-home.png');
+    this.load.image('map-street', './assets/maps/map-street.png');
+
+    // 26 zero-checkerboard 2.5D furniture & scene props atlas
+    this.load.atlas('home-props', './assets/sprites/home-props-atlas.png', './assets/sprites/home-props-atlas.json');
+
+    // CWSJ HD Primary Schoolboy 4x4 spritesheet (64x84 per frame) + NPCs + Minigame sprites
+    this.load.spritesheet('hero', './assets/sprites/char-cwsj-schoolboy.png', { frameWidth: 64, frameHeight: 84 });
     this.load.spritesheet('npcs', './assets/sprites/sprites-npcs-pests.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('mg', './assets/sprites/minigame-sprites.png', { frameWidth: 64, frameHeight: 64 });
-    this.load.spritesheet('tiles-home', './assets/tilesets/tileset-home-interior.png', { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('tiles-street', './assets/tilesets/tileset-hk-street.png', { frameWidth: 64, frameHeight: 64 });
 
     this.load.on('complete', () => { bg.destroy(); fill.destroy(); label.destroy(); });
   }
 
   create(): void {
+    // Enforce crisp NEAREST pixel filtering & double-verify ZERO checkerboard on all sprite textures!
+    ['map-home', 'map-street'].forEach((mk) => {
+      if (this.textures.exists(mk)) this.textures.get(mk).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    });
+    ['hero', 'home-props', 'npcs', 'mg', 'tiles-street'].forEach((sk) => {
+      sanitizeSpriteTextureAlpha(this, sk);
+    });
+    syncHeroPortraitToDom(this);
+
+    // 4x4 CWSJ HD Schoolboy animations (rows: 0=down, 1=left, 2=right, 3=up; cols: 0..3)
     const dirs = ['down', 'left', 'right', 'up'];
     dirs.forEach((dir, row) => {
-      const b = row * 6;
+      const b = row * 4;
       this.anims.create({
         key: `hero-idle-${dir}`,
-        frames: [{ key: 'hero', frame: b }, { key: 'hero', frame: b + 1 }],
-        frameRate: 2.5,
+        frames: [{ key: 'hero', frame: b }],
+        frameRate: 2,
         repeat: -1
       });
       this.anims.create({
         key: `hero-walk-${dir}`,
         frames: [
+          { key: 'hero', frame: b + 1 },
           { key: 'hero', frame: b + 2 },
           { key: 'hero', frame: b + 3 },
-          { key: 'hero', frame: b + 4 },
-          { key: 'hero', frame: b + 3 }
+          { key: 'hero', frame: b }
         ],
         frameRate: 9,
         repeat: -1
@@ -49,8 +67,8 @@ export class PreloadScene extends Phaser.Scene {
 
     this.anims.create({
       key: 'hero-cheer',
-      frames: [{ key: 'hero', frame: 5 }, { key: 'hero', frame: 0 }, { key: 'hero', frame: 5 }],
-      frameRate: 6,
+      frames: [{ key: 'hero', frame: 1 }, { key: 'hero', frame: 0 }, { key: 'hero', frame: 3 }, { key: 'hero', frame: 0 }],
+      frameRate: 7,
       repeat: 1
     });
 

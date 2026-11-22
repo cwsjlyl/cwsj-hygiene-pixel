@@ -34,12 +34,10 @@ export class MinigameScene extends Phaser.Scene {
   create(): void {
     sound.playBgm('minigame');
 
-    // Dimmed pixel backdrop + retro arcade cabinet frame
     this.add.rectangle(640, 360, 1280, 720, 0x060b16, 0.88);
     this.add.rectangle(640, 392, 1060, 560, 0x0f172a).setStrokeStyle(6, 0xfbbf24);
     this.add.rectangle(640, 142, 1060, 58, 0x1e3a8a).setStrokeStyle(4, 0xfbbf24);
 
-    // Progress bar
     this.add.rectangle(640, 192, 620, 18, 0x1e293b).setStrokeStyle(2, 0x64748b);
     this.progFill = this.add.rectangle(332, 192, 4, 12, 0x10b981).setOrigin(0, 0.5);
 
@@ -47,7 +45,6 @@ export class MinigameScene extends Phaser.Scene {
       fontSize: '18px', color: '#fde047', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    // Exit button
     const exitBtn = this.add.text(1135, 142, '✕ 返回', {
       fontSize: '17px', color: '#ffffff', backgroundColor: '#dc2626', padding: { x: 10, y: 6 }, fontStyle: 'bold'
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -109,11 +106,10 @@ export class MinigameScene extends Phaser.Scene {
     const bonus = medal === 'gold' ? 80 : medal === 'silver' ? 40 : 15;
     const medalLabel = medal === 'gold' ? '🥇 金牌通關' : medal === 'silver' ? '🥈 銀牌通關' : '🥉 銅牌通關';
 
-    const card = this.add.rectangle(640, 410, 520, 190, 0x064e3b).setStrokeStyle(5, 0xfbbf24).setDepth(500);
-    const txt = this.add.text(640, 390, `${medalLabel}！\n連擊獎勵 +${bonus} 分`, {
+    this.add.rectangle(640, 410, 520, 190, 0x064e3b).setStrokeStyle(5, 0xfbbf24).setDepth(500);
+    this.add.text(640, 390, `${medalLabel}！\n連擊獎勵 +${bonus} 分`, {
       fontSize: '28px', color: '#fde047', fontStyle: 'bold', align: 'center'
     }).setOrigin(0.5).setDepth(501);
-    void card; void txt;
 
     this.time.delayedCall(1100, () => this.exitScene(true, medal, bonus));
   }
@@ -127,14 +123,13 @@ export class MinigameScene extends Phaser.Scene {
     else this.onCancel();
   }
 
-  // 1. 洗手泡泡滅菌戰 (Pixel Hands + Soap Bubble Shooter vs Bouncing Pixel Viruses!)
   private setupWashHands(): void {
     this.setHeader('🧼 洗手泡泡滅菌戰', '輕觸或滑過游走的「像素病毒與細菌」，發射番梘泡泡將雙手徹底洗淨（消滅 12 隻）！');
     this.add.rectangle(640, 435, 920, 360, 0x0c4a6e).setStrokeStyle(3, 0x38bdf8);
+    this.add.image(255, 525, 'home-props', 'sink_vanity').setScale(1.15).setAlpha(0.85);
 
-    // Pixel Left & Right Hands + Soap Dispenser
-    this.add.image(560, 450, 'mg', 0).setScale(2.3).setAlpha(0.9);
-    this.add.image(720, 450, 'mg', 0).setScale(2.3).setFlipX(true).setAlpha(0.9);
+    this.add.image(560, 450, 'mg', 0).setScale(2.3).setAlpha(0.95);
+    this.add.image(720, 450, 'mg', 0).setScale(2.3).setFlipX(true).setAlpha(0.95);
     const soap = this.add.image(640, 575, 'mg', 1).setScale(1.6);
 
     let cleared = 0;
@@ -142,10 +137,10 @@ export class MinigameScene extends Phaser.Scene {
     const spawnGerm = () => {
       if (this.finished) return;
       const frame = Math.random() < 0.5 ? 3 : 4;
-      const g = this.add.sprite(240 + Math.random() * 800, 290 + Math.random() * 250, 'mg', frame).setScale(1.25).setInteractive({ useHandCursor: true });
+      const g = this.add.sprite(260 + Math.random() * 760, 290 + Math.random() * 250, 'mg', frame).setScale(1.25).setInteractive({ useHandCursor: true });
       this.tweens.add({
         targets: g,
-        x: Phaser.Math.Clamp(g.x + (Math.random() - 0.5) * 260, 220, 1060),
+        x: Phaser.Math.Clamp(g.x + (Math.random() - 0.5) * 260, 240, 1050),
         y: Phaser.Math.Clamp(g.y + (Math.random() - 0.5) * 180, 280, 560),
         duration: 1100 + Math.random() * 600,
         yoyo: true,
@@ -181,10 +176,11 @@ export class MinigameScene extends Phaser.Scene {
     for (let i = 0; i < 5; i++) spawnGerm();
   }
 
-  // 2. 護齒刷牙大掃除 (Pixel Teeth Row + Draggable Pixel Toothbrush + Cavity Imps!)
   private setupBrushTeeth(): void {
     this.setHeader('🪥 護齒刷牙大掃除', '按住並來回滑動刷洗全部 10 顆「黃色牙菌膜像素牙齒」（每顆刷 3 下），並拍走紅色蛀牙菌！');
     this.add.rectangle(640, 435, 920, 360, 0x3b0764).setStrokeStyle(3, 0xf472b6);
+    this.add.image(235, 325, 'home-props', 'mirror').setScale(1.3);
+    this.add.image(1040, 330, 'home-props', 'towel').setScale(1.3);
 
     const brush = this.add.image(640, 540, 'mg', 7).setScale(1.7).setDepth(50);
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
@@ -224,7 +220,6 @@ export class MinigameScene extends Phaser.Scene {
       tooth.on('pointerover', (p: Phaser.Input.Pointer) => { if (p.isDown) doScrub(); });
     }
 
-    // Spawn pesky Cavity Imps for extra arcade fun!
     this.time.addEvent({
       delay: 1800,
       loop: true,
@@ -243,20 +238,20 @@ export class MinigameScene extends Phaser.Scene {
     });
   }
 
-  // 3. 精準剪甲節奏王 (5 Dirty Long-Nail Fingers + Moving Pixel Nail Clippers!)
   private setupTrimNails(): void {
     this.setHeader('💅 精準剪甲節奏王', '當上方移動的「像素銀色指甲鉗」對準下方藏垢長指甲時，點擊畫面精準修剪全部 5 指！');
     this.add.rectangle(640, 435, 920, 360, 0x1e293b).setStrokeStyle(3, 0x38bdf8);
+    this.add.image(245, 515, 'home-props', 'computer_desk').setScale(1.1).setAlpha(0.85);
 
     const fingers: { x: number; spr: Phaser.GameObjects.Sprite; trimmed: boolean }[] = [];
     for (let i = 0; i < 5; i++) {
-      const fx = 340 + i * 150;
+      const fx = 360 + i * 145;
       const spr = this.add.sprite(fx, 515, 'mg', 9).setScale(1.9);
       this.add.circle(fx, 435, 18, 0x10b981, 0.28).setStrokeStyle(2, 0x34d399);
       fingers.push({ x: fx, spr, trimmed: false });
     }
 
-    const clipper = this.add.sprite(260, 345, 'mg', 11).setScale(1.8).setAngle(90);
+    const clipper = this.add.sprite(280, 345, 'mg', 11).setScale(1.8).setAngle(90);
     this.tweens.add({ targets: clipper, x: 1020, duration: 1550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     let doneCount = 0;
@@ -285,11 +280,10 @@ export class MinigameScene extends Phaser.Scene {
     });
   }
 
-  // 4. 餐桌防鼠保衛戰 (Cover 4 Pixel Dishes with Mesh Domes & Swat Scurrying Rats/Flies!)
   private setupCoverFood(): void {
     this.setHeader('🍲 餐桌防鼠保衛戰', '點擊 4 碟餸菜蓋上「像素防塵罩」，並拍走偷襲的像素老鼠與蒼蠅（完成加蓋及擊退 6 隻害蟲）！');
     this.add.rectangle(640, 435, 920, 360, 0x451a03).setStrokeStyle(3, 0xf59e0b);
-    this.add.rectangle(640, 435, 520, 220, 0xd97706).setStrokeStyle(4, 0xfde68a);
+    this.add.image(640, 455, 'home-props', 'dining_table').setScale(3.1);
 
     let covered = 0;
     let swatted = 0;
@@ -298,7 +292,7 @@ export class MinigameScene extends Phaser.Scene {
       if (covered >= 4 && swatted >= 6) this.winGame();
     };
 
-    const positions = [[510, 385], [770, 385], [510, 485], [770, 485]];
+    const positions = [[510, 385], [770, 385], [510, 475], [770, 475]];
     positions.forEach(([px, py]) => {
       const dish = this.add.sprite(px, py, 'mg', 12).setScale(1.6).setInteractive({ useHandCursor: true });
       let isCov = false;
@@ -352,10 +346,11 @@ export class MinigameScene extends Phaser.Scene {
     });
   }
 
-  // 5. 倒積水滅孑孓挑戰 (Tip 4 Waterlogged Saucers & Zap Wriggling Larvae / Aedes Mosquitoes!)
   private setupClearSaucer(): void {
     this.setHeader('🪴 倒積水滅孑孓挑戰', '連點 4 個積水花盆底盤倒走積水，並點擊消滅水中扭動的「像素孑孓」與飛出的白紋伊蚊！');
     this.add.rectangle(640, 435, 920, 360, 0x14532d).setStrokeStyle(3, 0x4ade80);
+    this.add.image(235, 345, 'home-props', 'plant_large').setScale(1.1);
+    this.add.image(1045, 355, 'home-props', 'plant_whitepot').setScale(1.2);
 
     let dryCount = 0;
     let larvaCleared = 0;
@@ -384,7 +379,6 @@ export class MinigameScene extends Phaser.Scene {
         }
       });
 
-      // Spawn 2 wriggling larvae above waterlogged saucer
       for (let k = 0; k < 2; k++) {
         const lv = this.add.sprite(sx - 24 + k * 48, 405 - k * 45, 'mg', 17).setScale(1.35).setInteractive({ useHandCursor: true });
         this.tweens.add({ targets: lv, angle: { from: -18, to: 18 }, y: lv.y - 22, duration: 520, yoyo: true, repeat: -1 });
@@ -402,7 +396,6 @@ export class MinigameScene extends Phaser.Scene {
     }
   }
 
-  // 6. 香港三色回收快手 (Sort Pixel Bottles, Paper, Cans & Food Waste into 4 Pixel Bins!)
   private setupRecycleBottles(): void {
     this.setHeader('♻️ 香港三色回收快手', '看準中央出現的垃圾，點擊下方正確的「藍廢紙、黃鋁罐、啡膠樽、有蓋垃圾桶」（完成 8 件）！');
     this.add.rectangle(640, 435, 920, 360, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
@@ -414,7 +407,7 @@ export class MinigameScene extends Phaser.Scene {
       { frame: 22, bin: 3, name: '果皮廚餘 → 有蓋垃圾桶' }
     ];
     let sorted = 0;
-    let cur = items[2]; // Start with plastic bottle!
+    let cur = items[2];
 
     const curSpr = this.add.sprite(640, 355, 'mg', cur.frame).setScale(2.2);
     const curLabel = this.add.text(640, 425, '請選擇下方正確回收桶！', { fontSize: '18px', color: '#fde047', fontStyle: 'bold' }).setOrigin(0.5);
@@ -456,7 +449,6 @@ export class MinigameScene extends Phaser.Scene {
     });
   }
 
-  // 7. 冷氣止漏 ＋ DEET 驅蚊射擊 (Fix Dripping AC + Spray Aedes Mosquitoes, Avoid Butterflies!)
   private setupSprayMosquito(): void {
     this.setHeader('🦟 冷氣止漏 ＋ DEET 驅蚊射擊', '先點左上「滴水冷氣」修好排水喉，再點擊噴灑 DEET 消滅 7 隻白紋伊蚊（切勿誤噴彩蝶）！');
     this.add.rectangle(640, 435, 920, 360, 0x064e3b).setStrokeStyle(3, 0x34d399);
@@ -522,7 +514,6 @@ export class MinigameScene extends Phaser.Scene {
     });
   }
 
-  // 8. 防鼠三部曲：水泥鐵網封鼠洞 (2-Step Tool Crafting: Cement Trowel -> Steel Mesh, Newspaper Trap!)
   private setupSealRatHole(): void {
     this.setHeader('🕳️ 防鼠三部曲：封鎖破損鼠洞', '先點選下方工具：① 用「水泥灰刀」批平 3 個鼠洞 → ② 再釘上「金屬鐵絲網」（切勿用廢報紙）！');
     this.add.rectangle(640, 435, 920, 360, 0x334155).setStrokeStyle(3, 0xfbbf24);
@@ -551,7 +542,7 @@ export class MinigameScene extends Phaser.Scene {
       const hx = 370 + i * 270;
       const hole = this.add.sprite(hx, 385, 'mg', 29).setScale(2.1).setInteractive({ useHandCursor: true });
       const stLabel = this.add.text(hx, 465, '狀態：破損鼠洞', { fontSize: '15px', color: '#fca5a5', fontStyle: 'bold' }).setOrigin(0.5);
-      let stage = 0; // 0=open, 1=cemented, 2=meshed
+      let stage = 0;
 
       hole.on('pointerdown', () => {
         if (this.finished || stage === 2) return;
@@ -588,7 +579,6 @@ export class MinigameScene extends Phaser.Scene {
     }
   }
 
-  // 9. 食環署主任像素考核劇場
   private setupFehdQuiz(): void {
     this.setHeader('👮 食環署主任終極常識考核', '回答 3 道香港環境衛生常識問題，獲取彩雲聖若瑟小學榮譽證書！');
     this.add.sprite(285, 425, 'npcs', 0).setScale(2.6);
