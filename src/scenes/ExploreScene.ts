@@ -54,7 +54,7 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到全新高清像素家居！你可以用搖桿／方向鍵走近發光家具按 A，或直接輕觸物件互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
+      `${gameState.studentName}，歡迎回到 100% 原圖高清像素家居！你可以用搖桿／方向鍵走近發光家具按 A，或在 iPad 直接輕觸發光任務點互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
     );
   }
 
@@ -68,14 +68,14 @@ export class ExploreScene extends Phaser.Scene {
     frame: string,
     x: number,
     y: number,
-    scale = 1.35,
-    solidFoot = true,
+    scale = 1.0,
+    solidFoot = false,
     depthOffset = 0
   ): Phaser.GameObjects.Image {
     const img = this.add.image(x, y, 'home-props', frame).setScale(scale);
     img.setDepth(y + img.displayHeight * 0.36 + depthOffset);
     if (solidFoot) {
-      this.addFootCollider(x, y + img.displayHeight * 0.22, img.displayWidth * 0.62, Math.max(22, img.displayHeight * 0.26));
+      this.addFootCollider(x, y + img.displayHeight * 0.22, img.displayWidth * 0.55, Math.max(20, img.displayHeight * 0.24));
     }
     return img;
   }
@@ -91,13 +91,13 @@ export class ExploreScene extends Phaser.Scene {
 
     const worldW = mapId === 'home' ? 1902 : 2112;
     const worldH = mapId === 'home' ? 1380 : 1152;
-    this.physics.world.setBounds(36, 48, worldW - 72, worldH - 76);
+    this.physics.world.setBounds(48, 52, worldW - 96, worldH - 96);
     this.cameras.main.setBounds(0, 0, worldW, worldH);
 
     if (mapId === 'home') this.buildHdHomeScene(worldW, worldH);
     else this.buildHdStreetScene(worldW, worldH);
 
-    const spawn = mapId === 'home' ? { x: 860, y: 760 } : { x: 640, y: 610 };
+    const spawn = mapId === 'home' ? { x: 855, y: 555 } : { x: 630, y: 535 };
     this.companion = this.add.sprite(spawn.x - 48, spawn.y + 8, 'npcs', 16).setDepth(spawn.y);
     this.companion.play('companion-float');
 
@@ -120,172 +120,150 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   // ==========================================================================
-  // 1. Upgraded Full-Canvas HD Home Interior + 26 De-Checkered 2.5D Props
+  // 1. 100% 原圖背景家居場景 (map-home.png: 1902 x 1380) + 精準對齊去背任務物件
   // ==========================================================================
   private buildHdHomeScene(worldW: number, worldH: number): void {
     const bg = this.add.image(0, 0, 'map-home').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(worldW, worldH);
 
+    // 阻擋露台左右外側深色背景邊界，完整保留室內與露台行走動線
+    this.addFootCollider(260, 1210, 480, 320);
+    this.addFootCollider(1640, 1210, 480, 320);
+
     const roomBadge = (x: number, y: number, txt: string) => {
       this.add.text(x, y, txt, {
-        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.72)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
+        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.74)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
       }).setOrigin(0.5).setDepth(30);
     };
-    roomBadge(245, 290, '🚪 玄關走廊');
-    roomBadge(820, 120, '🍳 廚房與飯廳');
-    roomBadge(1520, 115, '🛁 浴室與洗手間');
-    roomBadge(830, 610, '🛋️ 溫馨客廳');
-    roomBadge(310, 835, '🛏️ 小明睡房');
-    roomBadge(1620, 985, '🌿 陽光露台');
+    roomBadge(220, 235, '🚪 玄關走廊');
+    roomBadge(650, 88, '🍳 廚房與飯廳');
+    roomBadge(1105, 88, '🧼 上方洗手間');
+    roomBadge(1610, 88, '🛏️ 主人睡房');
+    roomBadge(355, 505, '🛋️ 溫馨客廳');
+    roomBadge(1145, 685, '🛁 浴室梳洗區');
+    roomBadge(1610, 555, '💻 小明睡房');
+    roomBadge(960, 1045, '🌿 陽光露台');
 
-    // --- Zone A: Entrance Foyer (Top-Left) & Exit Door to HK Street ---
-    const frontDoor = this.addHomeProp('door', 215, 138, 1.35, false, 10);
-    this.addHomeProp('plant_whitepot', 335, 185, 1.25, true);
-    const doorEmote = this.add.sprite(215, 58, 'npcs', 29).setDepth(4200);
+    // --- 左上玄關大門 (210, 105)：前往香港社區街道 ---
+    const frontDoor = this.addHomeProp('door', 210, 105, 0.98, false, -5);
+    const doorEmote = this.add.sprite(210, 42, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: doorEmote, y: doorEmote.y - 8, duration: 650, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
-      id: 'go_street', x: 215, y: 185, radius: 115,
+      id: 'go_street', x: 210, y: 165, radius: 120,
       label: '🚪 按 A 或輕觸大門前往「香港社區街道」',
       sprite: frontDoor, emote: doorEmote
     });
 
-    // --- Zone B: Kitchen & Dining Room (Top-Center) + Task 4: Cover Food ---
-    this.addHomeProp('kitchen_top', 720, 95, 1.35, false);
-    this.addHomeProp('kitchen_bottom', 720, 195, 1.35, true);
-    this.addHomeProp('chair_side', 655, 385, 1.3, false);
-    this.addHomeProp('chair_side', 945, 385, 1.3, false).setFlipX(true);
+    // --- 中上飯廳餐桌 (640, 215)：任務 4 蓋好食物防鼠保衛戰 ---
     const foodDone = gameState.isDone('cover_food');
-    const cakeTable = this.addHomeProp(foodDone ? 'dining_table' : 'cake_table', 800, 385, 1.38, true);
+    const cakeTable = this.addHomeProp(foodDone ? 'dining_table' : 'cake_table', 640, 215, 0.96, false);
     if (foodDone) {
-      this.add.image(800, 355, 'mg', 13).setScale(1.15).setDepth(cakeTable.depth + 5);
+      this.add.image(640, 192, 'mg', 13).setScale(1.1).setDepth(cakeTable.depth + 5);
     }
-    this.registerTaskHotspot('cover_food', 800, 405, '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable);
+    this.registerTaskHotspot('cover_food', 640, 235, '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable);
 
-    // --- Zone C: Dual Aqua Bathrooms (Right Wing) + Tasks 1 & 2: Wash Hands & Brush Teeth ---
-    this.addHomeProp('shower', 1295, 210, 1.32, true);
-    this.addHomeProp('mirror', 1475, 145, 1.35, false);
-    const sinkSpr = this.addHomeProp('sink_vanity', 1475, 255, 1.35, true);
-    this.registerTaskHotspot('wash_hands', 1475, 285, '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr);
+    // --- 中右上方洗手間洗手盆 (1010, 245)：任務 1 洗手泡泡滅菌戰 ---
+    const sinkSpr = this.addHomeProp('sink_vanity', 1010, 245, 0.94, false);
+    this.registerTaskHotspot('wash_hands', 1010, 265, '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr);
 
-    this.addHomeProp('mirror', 1690, 145, 1.35, false);
-    const towelSpr = this.addHomeProp('towel', 1775, 185, 1.35, false);
-    const toothVanity = this.addHomeProp('sink_vanity', 1690, 255, 1.35, true);
-    void towelSpr;
-    this.registerTaskHotspot('brush_teeth', 1690, 285, '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity);
+    // --- 中下藍色磁磚浴室洗手盆 (1268, 775)：任務 2 護齒刷牙大掃除 ---
+    this.addHomeProp('towel', 1335, 735, 0.95, false);
+    const toothVanity = this.addHomeProp('sink_vanity', 1268, 775, 0.94, false);
+    this.registerTaskHotspot('brush_teeth', 1268, 795, '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity);
 
-    // Lower Bathroom fixtures
-    this.addHomeProp('toilet', 1310, 690, 1.32, true);
-    this.addHomeProp('bathtub', 1640, 725, 1.35, true);
+    // --- 右下小明睡房書桌 (1475, 915)：任務 3 精準剪甲節奏王 ---
+    const deskSpr = this.addHomeProp('computer_desk', 1475, 915, 0.96, false);
+    this.registerTaskHotspot('trim_nails', 1475, 928, '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr);
 
-    // --- Zone D: Cozy Living Room (Center) + Mom & Sister NPCs ---
-    this.addHomeProp('green_rug', 835, 920, 1.65, false, -500);
-    this.addHomeProp('tv_cabinet', 835, 695, 1.32, true);
-    this.addHomeProp('sofa_2seat', 835, 1020, 1.32, true);
-    this.addHomeProp('armchair_left', 625, 945, 1.25, true);
-    this.addHomeProp('armchair_right', 1045, 945, 1.25, true);
+    // --- 正下陽光露台盆栽 (960, 1195)：任務 5 倒積水滅孑孓挑戰 ---
+    const potSpr = this.addHomeProp('plant_whitepot', 960, 1195, 1.12, false);
+    this.registerTaskHotspot('clear_saucer', 960, 1210, '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr);
 
-    const mom = this.add.sprite(740, 825, 'npcs', 4).setDepth(840).play('npc-mom-walk');
-    this.tweens.add({ targets: mom, x: 960, duration: 3600, yoyo: true, repeat: -1 });
+    // --- 中央走廊與客廳入口：媽媽與妹妹互動 NPC ---
+    const mom = this.add.sprite(640, 560, 'npcs', 4).setDepth(580).play('npc-mom-walk');
+    this.tweens.add({ targets: mom, x: 810, duration: 3400, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
-      id: 'talk_mom', x: 850, y: 825, radius: 135,
+      id: 'talk_mom', x: 725, y: 560, radius: 135,
       label: '👩 按 A 與媽媽對話查看衛生提示', sprite: mom
     });
 
-    const sis = this.add.sprite(1080, 780, 'npcs', 12).setDepth(790).play('npc-girl-walk');
-    this.tweens.add({ targets: sis, y: 880, duration: 2600, yoyo: true, repeat: -1 });
-
-    // --- Zone E: Xiao Ming's Bedroom (Bottom-Left) + Task 3: Trim Nails ---
-    this.addHomeProp('double_bed', 195, 1030, 1.38, true);
-    this.addHomeProp('nightstand', 340, 965, 1.25, true);
-    this.addHomeProp('toy_box', 195, 1245, 1.3, true);
-    this.addHomeProp('chair_front', 475, 1185, 1.18, false);
-    const deskSpr = this.addHomeProp('computer_desk', 475, 1120, 1.38, true);
-    this.registerTaskHotspot('trim_nails', 475, 1145, '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr);
-
-    // --- Zone F: Sunny Balcony (Bottom-Right) + Task 5: Clear Flowerpot Saucer ---
-    this.addHomeProp('balcony_railing', 1515, 1305, 1.4, true);
-    this.addHomeProp('balcony_railing', 1735, 1305, 1.4, true);
-    this.addHomeProp('plant_large', 1495, 1135, 1.32, true);
-    this.addHomeProp('plant_small', 1765, 1175, 1.32, true);
-    const potSpr = this.addHomeProp('plant_whitepot', 1640, 1155, 1.45, true);
-    this.registerTaskHotspot('clear_saucer', 1640, 1175, '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr);
+    const sis = this.add.sprite(1430, 445, 'npcs', 12).setDepth(465).play('npc-girl-walk');
+    this.tweens.add({ targets: sis, x: 1590, duration: 2800, yoyo: true, repeat: -1 });
   }
 
   // ==========================================================================
-  // 2. Upgraded Full-Canvas HD Hong Kong Street & Choi Wan Park Scene
+  // 2. 100% 原圖背景香港街道場景 (map-street.png: 1408 x 768 -> 1.5x = 2112 x 1152)
   // ==========================================================================
   private buildHdStreetScene(worldW: number, worldH: number): void {
     const bg = this.add.image(0, 0, 'map-street').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(worldW, worldH);
 
-    // Keep hero off building roofs & busy車道 while allowing full park, sidewalk & bridge exploration
-    this.addFootCollider(1320, 145, 920, 220);
-
     const streetBadge = (x: number, y: number, txt: string) => {
       this.add.text(x, y, txt, {
-        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.75)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
+        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.76)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
       }).setOrigin(0.5).setDepth(30);
     };
-    streetBadge(310, 210, '🌳 彩雲社區公園');
-    streetBadge(635, 190, '🌉 行人天橋往返家居');
-    streetBadge(1380, 290, '🍜 香港味道茶餐廳 · 興發大排檔');
-    streetBadge(1890, 455, '🏛️ 河道石拱橋廣場');
+    streetBadge(430, 290, '🌳 彩雲社區公園');
+    streetBadge(1050, 215, '🌉 行人天橋返回家居');
+    streetBadge(1440, 245, '🍜 香港味道茶餐廳');
+    streetBadge(1375, 665, '🍲 興發大排檔');
+    streetBadge(1865, 515, '🏛️ 河道石拱橋');
 
-    // Return Home Entrance by Footbridge
-    const homeEmote = this.add.sprite(635, 225, 'npcs', 29).setDepth(4200);
+    // --- 中央行人天橋返回家居入口 (1050, 295) ---
+    const homeEmote = this.add.sprite(1050, 232, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: homeEmote, y: homeEmote.y - 7, duration: 620, yoyo: true, repeat: -1 });
-    const gateDoor = this.addHomeProp('door', 635, 295, 1.15, false);
+    const gateDoor = this.addHomeProp('door', 1050, 295, 0.92, false);
     this.registerInteractiveHotspot({
-      id: 'go_home', x: 635, y: 325, radius: 115,
-      label: '🏠 按 A 或輕觸返回「高清溫馨家居」', sprite: gateDoor, emote: homeEmote
+      id: 'go_home', x: 1050, y: 325, radius: 120,
+      label: '🏠 按 A 或輕觸天橋入口返回「溫馨家居」', sprite: gateDoor, emote: homeEmote
     });
 
-    // Patrolling Pedestrian NPC along HK Pink-Brick Sidewalk
-    const man = this.add.sprite(980, 640, 'npcs', 8).setDepth(660).play('npc-man-walk');
-    this.tweens.add({ targets: man, x: 1580, duration: 4800, yoyo: true, repeat: -1 });
+    // --- 街道行人路巡邏街坊 NPC ---
+    const man = this.add.sprite(760, 585, 'npcs', 8).setDepth(605).play('npc-man-walk');
+    this.tweens.add({ targets: man, x: 1320, duration: 4600, yoyo: true, repeat: -1 });
 
-    // Task 6: 3-Color Recycling Station in Choi Wan Park
+    // --- 左上彩雲社區公園 (425, 475)：任務 6 香港三色回收快手 ---
     const recDone = gameState.isDone('recycle_bottles');
-    this.add.image(330, 650, 'mg', 23).setScale(1.25).setDepth(655);
-    this.add.image(395, 650, 'mg', 24).setScale(1.25).setDepth(655);
-    this.add.image(460, 650, 'mg', 25).setScale(1.25).setDepth(655);
-    const bottles = this.add.sprite(395, 715, 'tiles-street', recDone ? 19 : 21).setScale(1.25).setDepth(720);
-    this.registerTaskHotspot('recycle_bottles', 395, 715, '♻️ 按 A 或輕觸進入「香港三色回收快手」', bottles);
+    this.add.image(365, 455, 'mg', 23).setScale(1.15).setDepth(465);
+    this.add.image(425, 455, 'mg', 24).setScale(1.15).setDepth(465);
+    this.add.image(485, 455, 'mg', 25).setScale(1.15).setDepth(465);
+    const bottles = this.add.sprite(425, 510, 'tiles-street', recDone ? 19 : 21).setScale(1.2).setDepth(520);
+    this.registerTaskHotspot('recycle_bottles', 425, 510, '♻️ 按 A 或輕觸進入「香港三色回收快手」', bottles);
 
-    // Task 7: Dripping Tang Lau AC + Aedes Mosquito Bushes
+    // --- 右上「香港味道茶餐廳」外牆 (1440, 360)：任務 7 冷氣止漏與滅蚊 ---
     const mosDone = gameState.isDone('spray_mosquito');
-    const acUnit = this.add.sprite(1040, 320, 'tiles-street', mosDone ? 10 : 9).setScale(1.35).setDepth(380);
-    const puddle = this.add.sprite(1040, 445, 'tiles-street', mosDone ? 19 : 22).setScale(1.25).setDepth(440);
+    const acUnit = this.add.sprite(1440, 345, 'tiles-street', mosDone ? 10 : 9).setScale(1.3).setDepth(395);
+    const puddle = this.add.sprite(1440, 465, 'tiles-street', mosDone ? 19 : 22).setScale(1.2).setDepth(460);
     if (mosDone) puddle.setVisible(false);
     if (!mosDone) {
-      this.add.sprite(985, 395, 'npcs', 20).setDepth(490).play('mosquito-fly');
-      this.add.sprite(1095, 415, 'npcs', 20).setDepth(490).play('mosquito-fly');
+      this.add.sprite(1385, 415, 'npcs', 20).setDepth(490).play('mosquito-fly');
+      this.add.sprite(1495, 430, 'npcs', 20).setDepth(490).play('mosquito-fly');
       this.time.addEvent({
         delay: 650, loop: true,
         callback: () => {
           if (gameState.currentMap !== 'street' || gameState.isDone('spray_mosquito')) return;
-          const drop = this.add.rectangle(1040, 345, 6, 10, 0x38bdf8).setDepth(470);
-          this.tweens.add({ targets: drop, y: 445, alpha: 0.2, duration: 480, onComplete: () => drop.destroy() });
+          const drop = this.add.rectangle(1440, 370, 6, 10, 0x38bdf8).setDepth(475);
+          this.tweens.add({ targets: drop, y: 465, alpha: 0.2, duration: 480, onComplete: () => drop.destroy() });
         }
       });
     }
-    this.registerTaskHotspot('spray_mosquito', 1040, 445, '🦟 按 A 或輕觸進入「冷氣止漏 ＋ DEET 驅蚊射擊」', acUnit);
+    this.registerTaskHotspot('spray_mosquito', 1440, 455, '🦟 按 A 或輕觸進入「冷氣止漏 ＋ DEET 驅蚊射擊」', acUnit);
 
-    // Task 8: Cha Chaan Teng / Dai Pai Dong Wall Rat Hole
+    // --- 中下「興發大排檔」外牆 (1375, 765)：任務 8 封堵鼠洞 ---
     const ratDone = gameState.isDone('seal_rathole');
-    const rHole = this.add.sprite(1445, 415, 'tiles-street', ratDone ? 15 : 14).setScale(1.35).setDepth(425);
+    const rHole = this.add.sprite(1375, 765, 'tiles-street', ratDone ? 15 : 14).setScale(1.3).setDepth(775);
     if (!ratDone) {
-      const rat = this.add.sprite(1380, 465, 'npcs', 24).setDepth(480).play('rat-scurry');
-      this.tweens.add({ targets: rat, x: 1510, duration: 950, yoyo: true, repeat: -1 });
+      const rat = this.add.sprite(1315, 805, 'npcs', 24).setDepth(815).play('rat-scurry');
+      this.tweens.add({ targets: rat, x: 1435, duration: 950, yoyo: true, repeat: -1 });
     }
-    this.registerTaskHotspot('seal_rathole', 1445, 440, '🕳️ 按 A 或輕觸進入「防鼠三部曲：封堵鼠洞」', rHole);
+    this.registerTaskHotspot('seal_rathole', 1375, 780, '🕳️ 按 A 或輕觸進入「防鼠三部曲：封堵鼠洞」', rHole);
 
-    // Task 9: FEHD Officer Final Assessment at Canal Bridge Plaza
-    const fehd = this.add.sprite(1845, 560, 'npcs', 0).setScale(1.25).setDepth(580).play('npc-fehd-walk');
+    // --- 右側河道石拱橋 (1835, 645)：任務 9 食環署主任常識總考核 ---
+    const fehd = this.add.sprite(1835, 645, 'npcs', 0).setScale(1.25).setDepth(665).play('npc-fehd-walk');
     const fEmote = this.add.sprite(fehd.x, fehd.y - 54, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: fEmote, y: fEmote.y - 7, duration: 600, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
-      id: 'fehd_quiz', x: fehd.x, y: fehd.y, radius: 115,
+      id: 'fehd_quiz', x: fehd.x, y: fehd.y, radius: 120,
       label: '👮 按 A 或輕觸接受「食環署主任常識總考核」', sprite: fehd, emote: fEmote
     });
   }
@@ -318,7 +296,7 @@ export class ExploreScene extends Phaser.Scene {
     const emote = this.add.sprite(x, y - 58, 'npcs', done ? 30 : 28).setDepth(4200);
     this.tweens.add({ targets: emote, y: emote.y - 7, duration: 580, yoyo: true, repeat: -1 });
 
-    this.registerInteractiveHotspot({ id, x, y, radius: 115, label, sprite, ring, emote });
+    this.registerInteractiveHotspot({ id, x, y, radius: 120, label, sprite, ring, emote });
   }
 
   private launchArcadeMinigame(taskId: string, onWon: (medal: MedalRank, bonus: number) => void): void {
@@ -348,7 +326,7 @@ export class ExploreScene extends Phaser.Scene {
     if (h.id === 'talk_mom') {
       const rem = 5 - gameState.completedCount('home');
       this.openDialogue('媽媽', rem > 0
-        ? `屋企仲有 ${rem} 項衛生任務未做完呀！記得去齊【右上浴室】、【左下睡房】、【正上飯廳】同【右下陽光露台】看看！`
+        ? `屋企仲有 ${rem} 項衛生任務未做完呀！記得去齊【中上飯廳】、【上下洗手間／浴室】、【右下小明睡房】同【正下陽光露台】看看！`
         : '全屋都乾乾淨淨！快啲由左上【玄關大門】去香港社區街道幫食環署主任啦！');
       return;
     }
@@ -359,7 +337,7 @@ export class ExploreScene extends Phaser.Scene {
       } else {
         sound.pop();
         this.buildWorld('street');
-        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！請幫忙到左邊公園做三色回收、到唐樓修好滴水冷氣與滅蚊、封好茶餐廳外牆鼠洞，最後到拱橋廣場找我考核！');
+        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！請幫忙到左上公園做三色回收、到「香港味道茶餐廳」修好滴水冷氣與滅蚊、封好「興發大排檔」外牆鼠洞，最後到右側河道石拱橋找我考核！');
       }
       return;
     }
@@ -410,16 +388,20 @@ export class ExploreScene extends Phaser.Scene {
   private detectRoomName(): string {
     const x = this.hero.x, y = this.hero.y;
     if (gameState.currentMap === 'home') {
-      if (x < 460 && y < 520) return '溫馨家居 · 🚪 玄關走廊';
-      if (x >= 460 && x < 1180 && y < 520) return '溫馨家居 · 🍳 廚房與飯廳';
-      if (x >= 1180 && y < 920) return '溫馨家居 · 🛁 浴室與洗手間';
-      if (x < 620 && y >= 760) return '溫馨家居 · 🛏️ 小明睡房';
-      if (x >= 1340 && y >= 920) return '溫馨家居 · 🌿 陽光露台';
-      return '溫馨家居 · 🛋️ 客廳';
+      if (x < 430 && y < 480) return '溫馨家居 · 🚪 玄關走廊';
+      if (x >= 430 && x < 940 && y < 480) return '溫馨家居 · 🍳 廚房與飯廳';
+      if (x >= 940 && x < 1330 && y < 460) return '溫馨家居 · 🧼 上方洗手間';
+      if (x >= 1330 && y < 510) return '溫馨家居 · 🛏️ 主人睡房';
+      if (x < 680 && y >= 480 && y < 1000) return '溫馨家居 · 🛋️ 溫馨客廳';
+      if (x >= 940 && x < 1350 && y >= 650 && y < 1000) return '溫馨家居 · 🛁 浴室梳洗區';
+      if (x >= 1350 && y >= 510 && y < 1000) return '溫馨家居 · 💻 小明睡房';
+      if (y >= 1000) return '溫馨家居 · 🌿 陽光露台';
+      return '溫馨家居 · 🏠 中央走廊';
     }
-    if (x < 680) return '香港社區 · 🌳 彩雲公園';
-    if (x >= 1720) return '香港社區 · 🏛️ 河道拱橋廣場';
-    return '香港社區 · 🍜 茶餐廳商舖街';
+    if (x < 720) return '香港社區 · 🌳 彩雲公園';
+    if (x >= 1700) return '香港社區 · 🏛️ 河道石拱橋';
+    if (y >= 620) return '香港社區 · 🍲 興發大排檔';
+    return '香港社區 · 🍜 香港味道茶餐廳';
   }
 
   private refreshHud(): void {
