@@ -31,11 +31,6 @@ export function installCrispChineseTextPatch(): void {
   };
 }
 
-/**
- * 執行期貼圖濾鏡與邊緣綠幕殘留二次保護：
- * - 對像素圖集設定對應濾鏡
- * - 若偵測到任何殘留螢光綠幕像素 (G 遠大於 R、B)，即時轉為純透明
- */
 export function sanitizeSpriteTextureAlpha(
   scene: Phaser.Scene,
   texKey: string,
@@ -97,6 +92,7 @@ export function syncHeroPortraitToDom(scene: Phaser.Scene): void {
 
     const fw = firstFrame?.cutWidth || Math.floor(src.width / 4);
     const fh = firstFrame?.cutHeight || Math.floor(src.height / 4);
+    const srcColX = src.width >= 448 ? fw : 0;
 
     const c = document.createElement('canvas');
     c.width = 160;
@@ -105,7 +101,7 @@ export function syncHeroPortraitToDom(scene: Phaser.Scene): void {
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     const cropH = Math.min(fh, Math.round(fw * 1.08));
-    ctx.drawImage(src, 0, 0, fw, cropH, 8, 6, 144, 148);
+    ctx.drawImage(src, srcColX, 0, fw, cropH, 8, 6, 144, 148);
     const url = c.toDataURL('image/png');
 
     document.querySelectorAll<HTMLImageElement>('#dialogue-portrait, .hero-avatar, .cert-avatar').forEach((img) => {

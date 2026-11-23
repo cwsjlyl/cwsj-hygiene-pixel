@@ -3,8 +3,10 @@ import { sanitizeSpriteTextureAlpha, syncHeroPortraitToDom } from '../gfx/CrispV
 import { HOME_STANDALONE_PROP_KEYS, STREET_STANDALONE_PROP_SPECS } from '../gfx/v4StandaloneAssetKeys';
 import {
   V5_HD_CHARS_ENABLED,
+  V5_HD_CHARS_EXT,
   V5_HOME_MAP_EXT,
   V5_STREET_MAP_EXT,
+  V5_STREET_NATIVE_1X,
   V5_VALID_STREET_PROPS
 } from '../gfx/v5RuntimeConfig';
 
@@ -26,7 +28,7 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=7';
+    const v = '?v=8';
     this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
     this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
     this.load.atlas('home-props', `./assets/sprites/home-props-atlas.png${v}`, `./assets/sprites/home-props-atlas.json${v}`);
@@ -41,10 +43,10 @@ export class PreloadScene extends Phaser.Scene {
     });
 
     if (V5_HD_CHARS_ENABLED) {
-      this.load.spritesheet('hero', `./assets/sprites/char-v5-hero.webp${v}`, { frameWidth: 112, frameHeight: 148 });
-      this.load.spritesheet('char-mom', `./assets/sprites/char-v5-mom.webp${v}`, { frameWidth: 112, frameHeight: 148 });
-      this.load.spritesheet('char-sister', `./assets/sprites/char-v5-sister.webp${v}`, { frameWidth: 112, frameHeight: 148 });
-      this.load.spritesheet('char-passerby', `./assets/sprites/char-v5-passerby.webp${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('hero', `./assets/sprites/char-v5-hero.${V5_HD_CHARS_EXT}${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-mom', `./assets/sprites/char-v5-mom.${V5_HD_CHARS_EXT}${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-sister', `./assets/sprites/char-v5-sister.${V5_HD_CHARS_EXT}${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-passerby', `./assets/sprites/char-v5-passerby.${V5_HD_CHARS_EXT}${v}`, { frameWidth: 112, frameHeight: 148 });
     } else {
       this.load.spritesheet('hero', `./assets/sprites/char-cwsj-schoolboy.png${v}`, { frameWidth: 64, frameHeight: 84 });
     }
@@ -62,9 +64,8 @@ export class PreloadScene extends Phaser.Scene {
         this.textures.get('map-home').setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
       if (this.textures.exists('map-street')) {
-        // 原生 1408x768 WebP 用 NEAREST 呈現銳利像素；超採樣 PNG 用 LINEAR
         this.textures.get('map-street').setFilter(
-          V5_STREET_MAP_EXT === 'webp'
+          V5_STREET_MAP_EXT === 'webp' || V5_STREET_NATIVE_1X
             ? Phaser.Textures.FilterMode.NEAREST
             : Phaser.Textures.FilterMode.LINEAR
         );
@@ -78,7 +79,7 @@ export class PreloadScene extends Phaser.Scene {
 
       ['char-mom', 'char-sister', 'char-passerby'].forEach((ck) => {
         if (this.textures.exists(ck)) {
-          this.textures.get(ck).setFilter(Phaser.Textures.FilterMode.NEAREST);
+          sanitizeSpriteTextureAlpha(this, ck, Phaser.Textures.FilterMode.NEAREST, false);
         }
       });
 
@@ -101,10 +102,24 @@ export class PreloadScene extends Phaser.Scene {
       const dirs = ['down', 'left', 'right', 'up'];
       dirs.forEach((dir, row) => {
         const b = row * 4;
+        const idleFrame = V5_HD_CHARS_ENABLED ? b + 1 : b;
+        const walkFrames = V5_HD_CHARS_ENABLED
+          ? [
+              { key: 'hero', frame: b },
+              { key: 'hero', frame: b + 1 },
+              { key: 'hero', frame: b + 2 },
+              { key: 'hero', frame: b + 3 }
+            ]
+          : [
+              { key: 'hero', frame: b + 1 },
+              { key: 'hero', frame: b + 2 },
+              { key: 'hero', frame: b + 3 },
+              { key: 'hero', frame: b }
+            ];
         if (!this.anims.exists(`hero-idle-${dir}`)) {
           this.anims.create({
             key: `hero-idle-${dir}`,
-            frames: [{ key: 'hero', frame: b }],
+            frames: [{ key: 'hero', frame: idleFrame }],
             frameRate: 2,
             repeat: -1
           });
@@ -112,12 +127,7 @@ export class PreloadScene extends Phaser.Scene {
         if (!this.anims.exists(`hero-walk-${dir}`)) {
           this.anims.create({
             key: `hero-walk-${dir}`,
-            frames: [
-              { key: 'hero', frame: b + 1 },
-              { key: 'hero', frame: b + 2 },
-              { key: 'hero', frame: b + 3 },
-              { key: 'hero', frame: b }
-            ],
+            frames: walkFrames,
             frameRate: 8,
             repeat: -1
           });
@@ -125,15 +135,17 @@ export class PreloadScene extends Phaser.Scene {
       });
 
       if (!this.anims.exists('hero-cheer')) {
+        const cheerFrames = V5_HD_CHARS_ENABLED
+          ? [{ key: 'hero', frame: 0 }, { key: 'hero', frame: 1 }, { key: 'hero', frame: 2 }, { key: 'hero', frame: 1 }]
+          : [{ key: 'hero', frame: 1 }, { key: 'hero', frame: 0 }, { key: 'hero', frame: 3 }, { key: 'hero', frame: 0 }];
         this.anims.create({
           key: 'hero-cheer',
-          frames: [{ key: 'hero', frame: 1 }, { key: 'hero', frame: 0 }, { key: 'hero', frame: 3 }, { key: 'hero', frame: 0 }],
+          frames: cheerFrames,
           frameRate: 7,
           repeat: 1
         });
       }
 
-      // 若已掛載第 3 階段上傳之高清角色圖集，建立四向行走動畫
       if (V5_HD_CHARS_ENABLED) {
         [
           { tex: 'char-mom', prefix: 'hd-mom' },
