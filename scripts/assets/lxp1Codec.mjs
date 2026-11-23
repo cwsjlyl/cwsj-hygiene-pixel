@@ -2,7 +2,7 @@ import zlib from 'node:zlib';
 
 /**
  * Decodes an LXP1 (Lossless Indexed Pixel v1) base64 payload into { w, h, rgba }.
- * Header (10B): 'LXP1' (4B) | width (u16BE) | height (u16BE) | nColors (u8) | transIdx (u8, 255=opaque)
+ * Header (10B): 'LXP1' (4B) | width (u16BE) | height (u16BE) | nColors (u8, 0=>256) | transIdx (u8, 255=opaque)
  */
 export function decodeLxp1ToRgba(b64) {
   const clean = b64.replace(/\s+/g, '');
@@ -13,11 +13,11 @@ export function decodeLxp1ToRgba(b64) {
   }
   const w = raw.readUInt16BE(4);
   const h = raw.readUInt16BE(6);
-  const nColors = raw[8];
+  const totalPx = w * h;
+  const nColors = raw[8] === 0 && raw.length >= 10 + 256 * 3 + totalPx ? 256 : raw[8];
   const transIdx = raw[9];
   const palOff = 10;
   const idxOff = palOff + nColors * 3;
-  const totalPx = w * h;
 
   if (raw.length < idxOff + totalPx) {
     throw new Error(`Corrupt LXP1 buffer: expected ${idxOff + totalPx}, got ${raw.length}`);
@@ -52,7 +52,8 @@ export function decodeLxp1ToRgba(b64) {
  * while preserving 100% razor-sharp outlines and alpha transparency.
  */
 export function scale2xRgba(w, h, srcRgba) {
-  const src32 = new Uint32Array(srcRgba.buffer, srcRgba.byteOffset, w * h);
+  const aligned = srcRgba.byteOffset % 4 === 0 ? srcRgba : new Uint8Array(srcRgba);
+  const src32 = new Uint32Array(aligned.buffer, aligned.byteOffset, w * h);
   const dw = w * 2;
   const dh = h * 2;
   const dstRgba = new Uint8Array(dw * dh * 4);
@@ -100,8 +101,7 @@ export function scale2xRgba(w, h, srcRgba) {
 }
 
 /**
- * Runs multiple EPX 2x passes (passes=1 -> 2x, passes=2 -> 4x) plus subtle
- * diagonal anti-jaggy blending on interior non-outline pixels for HD clarity.
+ * Runs multiple EPX 2x passes (passes=1 -> 2x, passes=2 -> 4x).
  */
 export function upscaleHdPixelArt(img, passes = 1) {
   let cur = img;

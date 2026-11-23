@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { sanitizeSpriteTextureAlpha, syncHeroPortraitToDom } from '../gfx/CrispVisuals';
+import { HOME_STANDALONE_PROP_KEYS, STREET_STANDALONE_PROP_SPECS } from '../gfx/v4StandaloneAssetKeys';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -10,7 +11,7 @@ export class PreloadScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const bg = this.add.rectangle(width / 2, height / 2, 460, 26, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
     const fill = this.add.rectangle(width / 2 - 224, height / 2, 4, 18, 0x10b981).setOrigin(0, 0.5);
-    const label = this.add.text(width / 2, height / 2 - 38, '載入高清家居與香港街道地圖及去背 Sprite 圖集...', {
+    const label = this.add.text(width / 2, height / 2 - 38, '載入 V4 超解析度高清地圖與 38 件獨立無損去背物件...', {
       fontSize: '19px', color: '#fde047', fontStyle: 'bold'
     }).setOrigin(0.5);
 
@@ -19,10 +20,18 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=5';
+    const v = '?v=6';
     this.load.image('map-home', `./assets/maps/map-home.png${v}`);
     this.load.image('map-street', `./assets/maps/map-street.png${v}`);
     this.load.atlas('home-props', `./assets/sprites/home-props-atlas.png${v}`, `./assets/sprites/home-props-atlas.json${v}`);
+
+    HOME_STANDALONE_PROP_KEYS.forEach((key) => {
+      this.load.image(`prop-home-${key}`, `./assets/sprites/props-home/${key}.png${v}`);
+    });
+    STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
+      this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
+    });
+
     this.load.spritesheet('hero', `./assets/sprites/char-cwsj-schoolboy.png${v}`, { frameWidth: 64, frameHeight: 84 });
     this.load.spritesheet('npcs', `./assets/sprites/sprites-npcs-pests.png${v}`, { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('mg', `./assets/sprites/minigame-sprites.png${v}`, { frameWidth: 64, frameHeight: 64 });
@@ -33,12 +42,32 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     try {
-      ['map-home', 'map-street'].forEach((mk) => {
-        if (this.textures.exists(mk)) this.textures.get(mk).setFilter(Phaser.Textures.FilterMode.NEAREST);
-      });
+      // 1:1 EPX-2x Compact Home map uses NEAREST for razor-sharp pixel fidelity
+      if (this.textures.exists('map-home')) {
+        this.textures.get('map-home').setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+      // 2x-EPX supersampled Street map & standalone props use LINEAR supersampling when scaled
+      if (this.textures.exists('map-street')) {
+        this.textures.get('map-street').setFilter(Phaser.Textures.FilterMode.LINEAR);
+      }
+
       ['hero', 'home-props', 'npcs', 'mg', 'tiles-street'].forEach((sk) => {
         sanitizeSpriteTextureAlpha(this, sk);
       });
+
+      HOME_STANDALONE_PROP_KEYS.forEach((key) => {
+        const tk = `prop-home-${key}`;
+        if (this.textures.exists(tk)) {
+          this.textures.get(tk).setFilter(Phaser.Textures.FilterMode.LINEAR);
+        }
+      });
+      STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
+        const tk = `prop-street-${spec.key}`;
+        if (this.textures.exists(tk)) {
+          this.textures.get(tk).setFilter(Phaser.Textures.FilterMode.LINEAR);
+        }
+      });
+
       syncHeroPortraitToDom(this);
 
       const dirs = ['down', 'left', 'right', 'up'];

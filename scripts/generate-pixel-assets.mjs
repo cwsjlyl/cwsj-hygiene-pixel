@@ -2,10 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { CWSJ_ORIGINAL_LOGO_LG01_B64, decodeLg01ToPng } from './assets/cwsjOriginalLogo.mjs';
+import { HOME_PROPS_PACK_A } from './assets/homePropsPackA.mjs';
+import { HOME_PROPS_PACK_B } from './assets/homePropsPackB.mjs';
+import { decodeLxp1ToRgba, scale2xRgba, upscaleHdPixelArt } from './assets/lxp1Codec.mjs';
 import { CWSJ_SCHOOLBOY_B64, verifyValidPngBuffer } from './assets/mapHomeData.mjs';
+import { STREET_PROPS_PACK } from './assets/streetPropsStandalone.mjs';
 import {
   decodePxg2ToRgba,
-  HOME_PROPS_ATLAS_PXG2_B64,
   MAP_HOME_PXG2_B64,
   MAP_STREET_PXG2_B64
 } from './assets/uploadedOriginalAssets.mjs';
@@ -51,17 +54,150 @@ function writeBinaryPng(targetPath, pngBuf) {
   fs.writeFileSync(targetPath, pngBuf);
 }
 
+function decodeSmartProp(item) {
+  const clean = item.b64.replace(/\s+/g, '');
+  const raw = zlib.inflateSync(Buffer.from(clean, 'base64'));
+  const magic = raw.subarray(0, 4).toString('ascii');
+  if (magic === 'LXP1') {
+    return decodeLxp1ToRgba(clean);
+  }
+  if (magic === 'PXG2') {
+    return decodePxg2ToRgba(clean, (w, h, rgba) => ({ w, h, rgba }));
+  }
+  if (item.w && item.h && raw.length === item.w * item.h * 4) {
+    const rgba = new Uint8Array(raw.length);
+    rgba.set(raw);
+    return { w: item.w, h: item.h, rgba };
+  }
+  throw new Error(`Unsupported prop payload format: magic=${magic}, len=${raw.length}`);
+}
+
+function cleanPureRgba(rgba) {
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i + 3] < 24) {
+      rgba[i] = 0;
+      rgba[i + 1] = 0;
+      rgba[i + 2] = 0;
+      rgba[i + 3] = 0;
+    }
+  }
+  return rgba;
+}
+
 // ============================================================================
-// 0. 100% 原裝校徽 CWSJ logo.png（2138 x 1233 逐像素無損輸出，不做任何修改）
+// 0. 100% 原裝校徽 CWSJ logo.png（2138 x 1233 逐像素無損輸出）
 // ============================================================================
 writeBinaryPng('public/assets/ui/cwsj-logo.png', decodeLg01ToPng(CWSJ_ORIGINAL_LOGO_LG01_B64, encodePNG));
 
 // ============================================================================
-// 1. 100% 寫入上傳原圖背景與徹底去背 26 件家具圖集（絕不使用程序化生成底圖）
+// 1. V4 高清超解析度地圖管線 (Compact Home 1268x920 EPX-2x & HK Street 2816x1536 EPX-2x)
+//    - 將 1902x1380 家居原圖還原至原生 634x460 網格後執行 EPX 2x 邊緣銳利化 -> 1268 x 920 緊湊版家居
+//    - 將 1408x768 香港街道原圖執行 EPX 2x 超解析度升級 -> 2816 x 1536 高清街道底圖
 // ============================================================================
-writeBinaryPng('public/assets/maps/map-home.png', decodePxg2ToRgba(MAP_HOME_PXG2_B64, encodePNG));
-writeBinaryPng('public/assets/maps/map-street.png', decodePxg2ToRgba(MAP_STREET_PXG2_B64, encodePNG));
-writeBinaryPng('public/assets/sprites/home-props-atlas.png', decodePxg2ToRgba(HOME_PROPS_ATLAS_PXG2_B64, encodePNG));
+{
+  const rawHome1902 = decodePxg2ToRgba(MAP_HOME_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+  const baseW = 634;
+  const baseH = 460;
+  const home634 = new Uint8Array(baseW * baseH * 4);
+  for (let y = 0; y < baseH; y++) {
+    const sy = Math.min(rawHome1902.h - 1, y * 3 + 1);
+    for (let x = 0; x < baseW; x++) {
+      const sx = Math.min(rawHome1902.w - 1, x * 3 + 1);
+      const si = (sy * rawHome1902.w + sx) * 4;
+      const di = (y * baseW + x) * 4;
+      home634[di] = rawHome1902.rgba[si];
+      home634[di + 1] = rawHome1902.rgba[si + 1];
+      home634[di + 2] = rawHome1902.rgba[si + 2];
+      home634[di + 3] = 255;
+    }
+  }
+  const hdCompactHome = scale2xRgba(baseW, baseH, home634); // 1268 x 920
+  writeBinaryPng('public/assets/maps/map-home.png', encodePNG(hdCompactHome.w, hdCompactHome.h, hdCompactHome.rgba));
+
+  const rawStreet1408 = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+  const hdStreet = scale2xRgba(rawStreet1408.w, rawStreet1408.h, rawStreet1408.rgba); // 2816 x 1536
+  writeBinaryPng('public/assets/maps/map-street.png', encodePNG(hdStreet.w, hdStreet.h, hdStreet.rgba));
+}
+
+// ============================================================================
+// 1b. V4 26 件無損 LXP1 獨立家居家具 PNG + 無損重建圖集 & 12 件無損香港街道獨立物件 PNG
+// ============================================================================
+const allHomePropPacks = { ...HOME_PROPS_PACK_A, ...HOME_PROPS_PACK_B };
+const decodedHomeProps1x = {};
+for (const [name, item] of Object.entries(allHomePropPacks)) {
+  const decoded = decodeSmartProp(item);
+  cleanPureRgba(decoded.rgba);
+  decodedHomeProps1x[name] = decoded;
+  const hd2x = upscaleHdPixelArt(decoded, 1);
+  cleanPureRgba(hd2x.rgba);
+  writeBinaryPng(
+    `public/assets/sprites/props-home/${name}.png`,
+    encodePNG(hd2x.w, hd2x.h, hd2x.rgba)
+  );
+}
+
+// 同步以 100% 無損 LXP1 像素重建 home-props-atlas.png + home-props-atlas.json
+{
+  const atlasW = 1024;
+  const atlasH = 512;
+  const atlasRgba = new Uint8Array(atlasW * atlasH * 4);
+  const frames = {};
+  let cx = 4;
+  let cy = 4;
+  let rowH = 0;
+
+  for (const [name, spr] of Object.entries(decodedHomeProps1x).sort((a, b) => b[1].h - a[1].h)) {
+    if (cx + spr.w + 6 > atlasW) {
+      cx = 4;
+      cy += rowH + 6;
+      rowH = 0;
+    }
+    for (let y = 0; y < spr.h; y++) {
+      const srcOff = y * spr.w * 4;
+      const dstOff = ((cy + y) * atlasW + cx) * 4;
+      atlasRgba.set(spr.rgba.subarray(srcOff, srcOff + spr.w * 4), dstOff);
+    }
+    frames[name] = {
+      frame: { x: cx, y: cy, w: spr.w, h: spr.h },
+      rotated: false,
+      trimmed: false,
+      spriteSourceSize: { x: 0, y: 0, w: spr.w, h: spr.h },
+      sourceSize: { w: spr.w, h: spr.h }
+    };
+    cx += spr.w + 6;
+    rowH = Math.max(rowH, spr.h);
+  }
+
+  writeBinaryPng('public/assets/sprites/home-props-atlas.png', encodePNG(atlasW, atlasH, atlasRgba));
+  const atlasMeta = {
+    frames,
+    meta: {
+      app: 'cwsj-hygiene-pixel-v4-lxp1',
+      version: '4.0',
+      image: 'home-props-atlas.png',
+      format: 'RGBA8888',
+      size: { w: atlasW, h: atlasH },
+      scale: '1'
+    }
+  };
+  fs.mkdirSync('public/assets/sprites', { recursive: true });
+  fs.writeFileSync('public/assets/sprites/home-props-atlas.json', JSON.stringify(atlasMeta, null, 2));
+}
+
+// 輸出 12 件無損 EPX-2x 香港街道獨立前景物件
+const streetManifest = {};
+for (const [name, item] of Object.entries(STREET_PROPS_PACK)) {
+  const decoded = decodeSmartProp(item);
+  cleanPureRgba(decoded.rgba);
+  const hd2x = upscaleHdPixelArt(decoded, 1);
+  cleanPureRgba(hd2x.rgba);
+  writeBinaryPng(
+    `public/assets/sprites/props-street/${name}.png`,
+    encodePNG(hd2x.w, hd2x.h, hd2x.rgba)
+  );
+  streetManifest[name] = { x: item.x, y: item.y, w: item.w, h: item.h };
+}
+fs.writeFileSync('public/assets/sprites/street-props-manifest.json', JSON.stringify(streetManifest, null, 2));
 
 function hex(h, a = 255) {
   const s = h.replace('#', '');
@@ -170,7 +306,6 @@ class PixBuf {
 
 // ============================================================================
 // 2. Protagonist: CWSJ HD Schoolboy Sheet (256x336 4x4, 64x84 per frame) + UI Portrait
-//    Rows: 0=down, 1=left, 2=right, 3=up; Cols: 0..3
 // ============================================================================
 function drawSchoolboyFrame32x42(dirRow, col) {
   let b = new PixBuf(32, 42);
@@ -191,36 +326,29 @@ function drawSchoolboyFrame32x42(dirRow, col) {
   const step = col === 1 ? -2 : (col === 3 ? 2 : 0);
 
   if (dirRow === 0 || dirRow === 3) {
-    // Down (0) or Up (3)
     const lY = 33 + bob + (step < 0 ? -1 : 0);
     const rY = 33 + bob + (step > 0 ? -1 : 0);
-    // Legs, white socks & leather shoes
     b.rect(11, 28 + bob, 14, lY, SKIN);
     b.rect(17, 28 + bob, 20, rY, SKIN);
     b.rect(11, lY, 14, lY + 2, SOCK);
     b.rect(17, rY, 20, rY + 2, SOCK);
     b.rect(10, lY + 3, 14, lY + 4, SHOE);
     b.rect(17, rY + 3, 21, rY + 4, SHOE);
-    // Navy school shorts
     b.rect(10, 23 + bob, 21, 28 + bob, PANTS);
     b.rect(15, 25 + bob, 16, 28 + bob, PANTS_SH);
-    // White CWSJ summer uniform shirt
     b.rect(9, 15 + bob, 22, 23 + bob, SHIRT_SH);
     b.rect(10, 15 + bob, 21, 22 + bob, SHIRT);
-    // Short sleeves & arms
     const armSwing = step;
     b.rect(7, 15 + bob, 9, 18 + bob, SHIRT);
     b.rect(22, 15 + bob, 24, 18 + bob, SHIRT);
     b.rect(7, 19 + bob + (armSwing > 0 ? -1 : 0), 9, 23 + bob, SKIN);
     b.rect(22, 19 + bob + (armSwing < 0 ? -1 : 0), 24, 23 + bob, SKIN);
     if (dirRow === 0) {
-      // Collar, tie/badge & crest on front
       b.rect(13, 15 + bob, 18, 16 + bob, COLLAR);
       b.rect(15, 16 + bob, 16, 20 + bob, COLLAR);
       b.px(18, 18 + bob, hex('#ef4444'));
       b.px(19, 18 + bob, hex('#facc15'));
     }
-    // Head & Hair
     b.rect(9, 5 + bob, 22, 14 + bob, SKIN);
     b.rect(9, 13 + bob, 22, 14 + bob, SKIN_SH);
     b.rect(8, 3 + bob, 23, 8 + bob, HAIR);
@@ -232,12 +360,10 @@ function drawSchoolboyFrame32x42(dirRow, col) {
       b.px(11, 9 + bob, hex('#ffffff')); b.px(19, 9 + bob, hex('#ffffff'));
       b.rect(14, 12 + bob, 17, 12 + bob, hex('#e17065'));
     } else {
-      // Back of head hair
       b.rect(8, 3 + bob, 23, 12 + bob, HAIR);
       b.rect(11, 5 + bob, 18, 6 + bob, HAIR_HI);
     }
   } else {
-    // Side profile (draw facing LEFT first; flipH for RIGHT)
     const fX = 13 + step;
     const bX = 15 - step;
     b.rect(bX, 28 + bob, bX + 3, 33 + bob, SKIN_SH);
@@ -251,10 +377,8 @@ function drawSchoolboyFrame32x42(dirRow, col) {
     b.rect(11, 23 + bob, 20, 28 + bob, PANTS);
     b.rect(11, 15 + bob, 20, 23 + bob, SHIRT);
     b.rect(12, 15 + bob, 15, 16 + bob, COLLAR);
-    // Side arm
     b.rect(14 - Math.sign(step), 16 + bob, 17 - Math.sign(step), 19 + bob, SHIRT_SH);
     b.rect(14 - Math.sign(step), 20 + bob, 16 - Math.sign(step), 23 + bob, SKIN);
-    // Side head
     b.rect(10, 5 + bob, 20, 14 + bob, SKIN);
     b.rect(9, 3 + bob, 22, 8 + bob, HAIR);
     b.rect(16, 7 + bob, 22, 12 + bob, HAIR);
@@ -263,7 +387,7 @@ function drawSchoolboyFrame32x42(dirRow, col) {
     b.px(11, 12 + bob, hex('#e17065'));
     if (dirRow === 2) b = b.flipH();
   }
-  return b.withGroundShadow(9, 23, 36, 40, 95).epx2x(); // 64 x 84
+  return b.withGroundShadow(9, 23, 36, 40, 95).epx2x();
 }
 
 const heroTarget = 'public/assets/sprites/char-cwsj-schoolboy.png';
@@ -280,9 +404,8 @@ if (verifyValidPngBuffer(b64Buf, 256, 336)) {
   heroSheet.save(heroTarget);
 }
 
-// Generate crisp 128x128 portrait-student-boy.png for Title, Dialogue & Certificate DOM
 {
-  const f0 = drawSchoolboyFrame32x42(0, 0); // 64x84
+  const f0 = drawSchoolboyFrame32x42(0, 0);
   const portrait = new PixBuf(128, 128);
   for (let y = 0; y < 64; y++) {
     for (let x = 0; x < 64; x++) {
@@ -463,7 +586,7 @@ const putSP = (col, row, b) => streetProps.blit(b.outlined().epx2x(), col * 64, 
 streetProps.save('public/assets/tilesets/tileset-hk-street.png');
 
 // ============================================================================
-// 6. 建置期完整性強制驗證（確保所有必要圖檔 100% 存在且有效，杜絕線上 404 卡載入）
+// 6. V4 建置期完整性強制驗證（10 核心圖檔 + 26 獨立家居物件 + 12 獨立香港街道物件 = 48 檔案）
 // ============================================================================
 const requiredAssets = [
   'public/assets/ui/cwsj-logo.png',
@@ -472,14 +595,17 @@ const requiredAssets = [
   'public/assets/maps/map-street.png',
   'public/assets/sprites/home-props-atlas.png',
   'public/assets/sprites/home-props-atlas.json',
+  'public/assets/sprites/street-props-manifest.json',
   'public/assets/sprites/char-cwsj-schoolboy.png',
   'public/assets/sprites/sprites-npcs-pests.png',
   'public/assets/sprites/minigame-sprites.png',
-  'public/assets/tilesets/tileset-hk-street.png'
+  'public/assets/tilesets/tileset-hk-street.png',
+  ...Object.keys(allHomePropPacks).map((k) => `public/assets/sprites/props-home/${k}.png`),
+  ...Object.keys(STREET_PROPS_PACK).map((k) => `public/assets/sprites/props-street/${k}.png`)
 ];
 for (const rp of requiredAssets) {
-  if (!fs.existsSync(rp) || fs.statSync(rp).size < 100) {
-    throw new Error(`Missing or invalid required asset: ${rp}`);
+  if (!fs.existsSync(rp) || fs.statSync(rp).size < 64) {
+    throw new Error(`Missing or invalid required V4 asset: ${rp}`);
   }
 }
-console.log('[v3-verified] All 10 required assets (original logo, original HD maps, clean props & hero) verified!');
+console.log(`[v4-verified] All ${requiredAssets.length} V4 HD assets (EPX-2x maps, 26 standalone home props, 12 standalone HK street props & original logo) verified!`);
