@@ -50,9 +50,9 @@ function encodePNG(w, h, rgba) {
   ]);
 }
 
-function writeBinaryPng(targetPath, pngBuf) {
+function writeBinaryFile(targetPath, buf) {
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, pngBuf);
+  fs.writeFileSync(targetPath, buf);
 }
 
 function parseRawPropBuffer(raw, expectedW, expectedH) {
@@ -115,38 +115,78 @@ function cropRgbaRegion(srcImg, rx, ry, rw, rh) {
   return { w: rw, h: rh, rgba };
 }
 
-function tryDecodePropResilient(item, fallbackFn) {
+function tryDecodeLxp1Only(item) {
   const clean = item.b64.replace(/\s+/g, '');
   const buf = Buffer.from(clean, 'base64');
 
-  // Tier 1: Standard strict zlib inflate
+  // 1) 標準 zlib 解壓
   try {
     const raw = zlib.inflateSync(buf);
     return { img: parseRawPropBuffer(raw, item.w, item.h), tier: 'lxp1-strict' };
   } catch {
-    // proceed to Tier 2
+    // 繼續嘗試 Raw Deflate
   }
 
-  // Tier 2: Raw DEFLATE stream bypassing 2B zlib header & 4B Adler-32 tail checksum
-  try {
-    const rawBody = buf.subarray(2, Math.max(2, buf.length - 4));
-    const raw = zlib.inflateRawSync(rawBody, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
-    return { img: parseRawPropBuffer(raw, item.w, item.h), tier: 'lxp1-raw-deflate' };
-  } catch {
-    // proceed to Tier 3
+  // 2) 不裁尾端之 Raw Deflate（自動在 BFINAL 區塊結束，避免誤切最後位元）
+  for (const sliceEnd of [buf.length, Math.max(2, buf.length - 4)]) {
+    try {
+      const rawBody = buf.subarray(2, sliceEnd);
+      const raw = zlib.inflateRawSync(rawBody, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+      return { img: parseRawPropBuffer(raw, item.w, item.h), tier: 'lxp1-raw-deflate' };
+    } catch {
+      // 繼續
+    }
   }
-
-  // Tier 3: Verified original atlas/map region crop fallback
-  return { img: fallbackFn(), tier: 'atlas-crop-fallback' };
+  return null;
 }
 
-function cleanPureRgba(rgba) {
+const INTENTIONAL_GREEN_PROPS = new Set(['plant_large', 'plant_whitepot', 'plant_small', 'green_rug']);
+
+/**
+ * 徹底清除獨立物件中的「不明綠幕殘留（Chroma-Key Green）」與邊緣綠光溢色（Despill）：
+ * - 對非植物類家具物件，清除所有綠幕像素（G 明顯高於 R、B）並修正邊緣 1px 綠溢色
+ * - 對植物／綠地毯物件，僅清除高飽和螢光純綠背景色 (#00ff00 類型)
+ */
+function purgeChromaGreenAndCleanRgba(name, w, h, rgba) {
+  const isPlant = INTENTIONAL_GREEN_PROPS.has(name);
+
   for (let i = 0; i < rgba.length; i += 4) {
     if (rgba[i + 3] < 24) {
-      rgba[i] = 0;
-      rgba[i + 1] = 0;
-      rgba[i + 2] = 0;
-      rgba[i + 3] = 0;
+      rgba[i] = 0; rgba[i + 1] = 0; rgba[i + 2] = 0; rgba[i + 3] = 0;
+      continue;
+    }
+    const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+    if (!isPlant) {
+      // 非植物家具不應含有綠幕背景或草地綠塊
+      if (g >= 72 && (g - r) >= 24 && (g - b) >= 22) {
+        rgba[i] = 0; rgba[i + 1] = 0; rgba[i + 2] = 0; rgba[i + 3] = 0;
+      }
+    } else {
+      // 植物物件僅剔除螢光綠幕色 (Neon Chroma Key)
+      if (g >= 205 && r <= 85 && b <= 85) {
+        rgba[i] = 0; rgba[i + 1] = 0; rgba[i + 2] = 0; rgba[i + 3] = 0;
+      }
+    }
+  }
+
+  // 對非植物物件執行邊緣 1px 綠光溢色抑制 (Edge Despill)，消除家具黑線外的綠邊
+  if (!isPlant) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (rgba[i + 3] === 0) continue;
+        const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+        if (g > Math.max(r, b) + 12) {
+          let nearTrans = false;
+          if (x > 0 && rgba[i - 4 + 3] === 0) nearTrans = true;
+          else if (x < w - 1 && rgba[i + 4 + 3] === 0) nearTrans = true;
+          else if (y > 0 && rgba[i - w * 4 + 3] === 0) nearTrans = true;
+          else if (y < h - 1 && rgba[i + w * 4 + 3] === 0) nearTrans = true;
+          if (nearTrans) {
+            rgba[i + 1] = Math.round((r + b) * 0.5);
+          }
+        }
+      }
     }
   }
   return rgba;
@@ -155,15 +195,24 @@ function cleanPureRgba(rgba) {
 // ============================================================================
 // 0. 100% 原裝校徽 CWSJ logo.png（2138 x 1233 逐像素無損輸出）
 // ============================================================================
-writeBinaryPng('public/assets/ui/cwsj-logo.png', decodeLg01ToPng(CWSJ_ORIGINAL_LOGO_LG01_B64, encodePNG));
+writeBinaryFile('public/assets/ui/cwsj-logo.png', decodeLg01ToPng(CWSJ_ORIGINAL_LOGO_LG01_B64, encodePNG));
 
 // ============================================================================
-// 1. V4 高清超解析度地圖管線 (Compact Home 1268x920 EPX-2x & HK Street 2816x1536 EPX-2x)
+// 1. 分段原圖支援管線：若後續階段已掛載無損 WebP/PNG 原圖模組則優先直接寫入，否則使用基礎底圖
 // ============================================================================
 const rawHome1902 = decodePxg2ToRgba(MAP_HOME_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
-{
-  const baseW = 634;
-  const baseH = 460;
+const rawStreet1408 = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+
+let homeMapExt = 'png';
+let streetMapExt = 'png';
+
+if (fs.existsSync('scripts/assets/v5HomeLosslessWebp.mjs')) {
+  const { HOME_LOSSLESS_WEBP_B64 } = await import('./assets/v5HomeLosslessWebp.mjs');
+  writeBinaryFile('public/assets/maps/map-home.webp', Buffer.from(HOME_LOSSLESS_WEBP_B64.replace(/\s+/g, ''), 'base64'));
+  homeMapExt = 'webp';
+  console.log('[v5-stage2] Wrote 100% lossless uploaded map-home.webp!');
+} else {
+  const baseW = 634, baseH = 460;
   const home634 = new Uint8Array(baseW * baseH * 4);
   for (let y = 0; y < baseH; y++) {
     const sy = Math.min(rawHome1902.h - 1, y * 3 + 1);
@@ -177,58 +226,63 @@ const rawHome1902 = decodePxg2ToRgba(MAP_HOME_PXG2_B64, (w, h, rgba) => ({ w, h,
       home634[di + 3] = 255;
     }
   }
-  const hdCompactHome = scale2xRgba(baseW, baseH, home634); // 1268 x 920
-  writeBinaryPng('public/assets/maps/map-home.png', encodePNG(hdCompactHome.w, hdCompactHome.h, hdCompactHome.rgba));
+  const hdCompactHome = scale2xRgba(baseW, baseH, home634);
+  writeBinaryFile('public/assets/maps/map-home.png', encodePNG(hdCompactHome.w, hdCompactHome.h, hdCompactHome.rgba));
 }
 
-const rawStreet1408 = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
-{
-  const hdStreet = scale2xRgba(rawStreet1408.w, rawStreet1408.h, rawStreet1408.rgba); // 2816 x 1536
-  writeBinaryPng('public/assets/maps/map-street.png', encodePNG(hdStreet.w, hdStreet.h, hdStreet.rgba));
+if (fs.existsSync('scripts/assets/v5StreetLosslessWebp.mjs')) {
+  const { STREET_LOSSLESS_WEBP_B64 } = await import('./assets/v5StreetLosslessWebp.mjs');
+  writeBinaryFile('public/assets/maps/map-street.webp', Buffer.from(STREET_LOSSLESS_WEBP_B64.replace(/\s+/g, ''), 'base64'));
+  streetMapExt = 'webp';
+  console.log('[v5-stage4] Wrote 100% lossless uploaded map-street.webp!');
+} else {
+  const hdStreet = scale2xRgba(rawStreet1408.w, rawStreet1408.h, rawStreet1408.rgba);
+  writeBinaryFile('public/assets/maps/map-street.png', encodePNG(hdStreet.w, hdStreet.h, hdStreet.rgba));
 }
 
 // ============================================================================
-// 1b. V4 26 件獨立家居家具 PNG + 圖集重建 & 12 件香港街道獨立物件 PNG（三層容錯解碼）
+// 1b. 26 件獨立家居家具 PNG（徹底清除不明綠邊與綠幕殘留）+ 無損圖集重建
 // ============================================================================
 const existingAtlasJson = JSON.parse(fs.readFileSync('public/assets/sprites/home-props-atlas.json', 'utf8'));
 const fallbackAtlasImg = decodePxg2ToRgba(HOME_PROPS_ATLAS_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
 
 const allHomePropPacks = { ...HOME_PROPS_PACK_A, ...HOME_PROPS_PACK_B };
 const decodedHomeProps1x = {};
-const tierStats = { 'lxp1-strict': 0, 'lxp1-raw-deflate': 0, 'atlas-crop-fallback': 0 };
+const tierStats = { 'lxp1-strict': 0, 'lxp1-raw-deflate': 0, 'atlas-crop-fallback': 0, 'street-skipped': 0 };
 
 for (const [name, item] of Object.entries(allHomePropPacks)) {
-  const { img: decoded, tier } = tryDecodePropResilient(item, () => {
+  const res = tryDecodeLxp1Only(item);
+  let decoded;
+  if (res) {
+    decoded = res.img;
+    tierStats[res.tier]++;
+  } else {
     const f = existingAtlasJson.frames[name]?.frame;
-    if (!f) return { w: item.w, h: item.h, rgba: new Uint8Array(item.w * item.h * 4) };
-    return cropRgbaRegion(fallbackAtlasImg, f.x, f.y, f.w, f.h);
-  });
-  tierStats[tier]++;
-  cleanPureRgba(decoded.rgba);
+    decoded = f
+      ? cropRgbaRegion(fallbackAtlasImg, f.x, f.y, f.w, f.h)
+      : { w: item.w, h: item.h, rgba: new Uint8Array(item.w * item.h * 4) };
+    tierStats['atlas-crop-fallback']++;
+  }
+  purgeChromaGreenAndCleanRgba(name, decoded.w, decoded.h, decoded.rgba);
   decodedHomeProps1x[name] = decoded;
+
   const hd2x = upscaleHdPixelArt(decoded, 1);
-  cleanPureRgba(hd2x.rgba);
-  writeBinaryPng(
+  purgeChromaGreenAndCleanRgba(name, hd2x.w, hd2x.h, hd2x.rgba);
+  writeBinaryFile(
     `public/assets/sprites/props-home/${name}.png`,
     encodePNG(hd2x.w, hd2x.h, hd2x.rgba)
   );
 }
 
-// 同步重建 home-props-atlas.png + home-props-atlas.json
 {
-  const atlasW = 1024;
-  const atlasH = 512;
+  const atlasW = 1024, atlasH = 512;
   const atlasRgba = new Uint8Array(atlasW * atlasH * 4);
   const frames = {};
-  let cx = 4;
-  let cy = 4;
-  let rowH = 0;
+  let cx = 4, cy = 4, rowH = 0;
 
   for (const [name, spr] of Object.entries(decodedHomeProps1x).sort((a, b) => b[1].h - a[1].h)) {
     if (cx + spr.w + 6 > atlasW) {
-      cx = 4;
-      cy += rowH + 6;
-      rowH = 0;
+      cx = 4; cy += rowH + 6; rowH = 0;
     }
     for (let y = 0; y < spr.h; y++) {
       const srcOff = y * spr.w * 4;
@@ -246,40 +300,68 @@ for (const [name, item] of Object.entries(allHomePropPacks)) {
     rowH = Math.max(rowH, spr.h);
   }
 
-  writeBinaryPng('public/assets/sprites/home-props-atlas.png', encodePNG(atlasW, atlasH, atlasRgba));
-  const atlasMeta = {
+  writeBinaryFile('public/assets/sprites/home-props-atlas.png', encodePNG(atlasW, atlasH, atlasRgba));
+  fs.writeFileSync('public/assets/sprites/home-props-atlas.json', JSON.stringify({
     frames,
-    meta: {
-      app: 'cwsj-hygiene-pixel-v4-lxp1',
-      version: '4.0',
-      image: 'home-props-atlas.png',
-      format: 'RGBA8888',
-      size: { w: atlasW, h: atlasH },
-      scale: '1'
-    }
-  };
-  fs.mkdirSync('public/assets/sprites', { recursive: true });
-  fs.writeFileSync('public/assets/sprites/home-props-atlas.json', JSON.stringify(atlasMeta, null, 2));
+    meta: { app: 'cwsj-hygiene-pixel-v5-degreen', version: '5.0', image: 'home-props-atlas.png', format: 'RGBA8888', size: { w: atlasW, h: atlasH }, scale: '1' }
+  }, null, 2));
 }
 
-// 輸出 12 件 EPX-2x 香港街道獨立前景物件
+// ============================================================================
+// 1c. 香港街道 12 件獨立前景物件：嚴禁使用不透明綠草底圖裁切回退，徹底根除公園綠色色塊！
+// ============================================================================
 const streetManifest = {};
+const validStreetPropKeys = [];
 for (const [name, item] of Object.entries(STREET_PROPS_PACK)) {
-  const { img: decoded, tier } = tryDecodePropResilient(item, () =>
-    cropRgbaRegion(rawStreet1408, item.x, item.y, item.w, item.h)
-  );
-  tierStats[tier]++;
-  cleanPureRgba(decoded.rgba);
-  const hd2x = upscaleHdPixelArt(decoded, 1);
-  cleanPureRgba(hd2x.rgba);
-  writeBinaryPng(
-    `public/assets/sprites/props-street/${name}.png`,
-    encodePNG(hd2x.w, hd2x.h, hd2x.rgba)
-  );
-  streetManifest[name] = { x: item.x, y: item.y, w: item.w, h: item.h };
+  const res = tryDecodeLxp1Only(item);
+  if (res) {
+    const decoded = res.img;
+    tierStats[res.tier]++;
+    // 若非大排檔綠白帆布，一併清除外圍殘留公園草地綠邊
+    if (name !== 'daipaidong_sign') {
+      purgeChromaGreenAndCleanRgba(name, decoded.w, decoded.h, decoded.rgba);
+    }
+    const hd2x = upscaleHdPixelArt(decoded, 1);
+    writeBinaryFile(
+      `public/assets/sprites/props-street/${name}.png`,
+      encodePNG(hd2x.w, hd2x.h, hd2x.rgba)
+    );
+    streetManifest[name] = { x: item.x, y: item.y, w: item.w, h: item.h, valid: true };
+    validStreetPropKeys.push(name);
+  } else {
+    // 輸出 1x1 全透明安全佔位檔，絕不裁切綠色草地背景造成不明綠塊
+    writeBinaryFile(
+      `public/assets/sprites/props-street/${name}.png`,
+      encodePNG(2, 2, new Uint8Array(16))
+    );
+    streetManifest[name] = { x: item.x, y: item.y, w: item.w, h: item.h, valid: false };
+    tierStats['street-skipped']++;
+  }
 }
 fs.writeFileSync('public/assets/sprites/street-props-manifest.json', JSON.stringify(streetManifest, null, 2));
-console.log('[v4-prop-tiers]', JSON.stringify(tierStats));
+
+// 檢查第 3 階段高清角色精靈圖模組是否已掛載
+let hdCharsAvailable = false;
+if (fs.existsSync('scripts/assets/v5HdCharactersWebp.mjs')) {
+  const { HD_CHARS_WEBP } = await import('./assets/v5HdCharactersWebp.mjs');
+  for (const [roleKey, b64] of Object.entries(HD_CHARS_WEBP)) {
+    writeBinaryFile(`public/assets/sprites/char-v5-${roleKey}.webp`, Buffer.from(b64.replace(/\s+/g, ''), 'base64'));
+  }
+  hdCharsAvailable = true;
+  console.log('[v5-stage3] Wrote 4 uploaded HD character spritesheets (hero, mom, sister, passerby)!');
+}
+
+// 自動寫入前端執行期設定檔，讓 PreloadScene 與 ExploreScene 自動切換對應資源
+fs.writeFileSync(
+  'src/gfx/v5RuntimeConfig.ts',
+  `// Auto-generated by scripts/generate-pixel-assets.mjs\n` +
+  `export const V5_HOME_MAP_EXT = '${homeMapExt}' as const;\n` +
+  `export const V5_STREET_MAP_EXT = '${streetMapExt}' as const;\n` +
+  `export const V5_HD_CHARS_ENABLED = ${hdCharsAvailable};\n` +
+  `export const V5_VALID_STREET_PROPS: readonly string[] = ${JSON.stringify(validStreetPropKeys)};\n`
+);
+
+console.log('[v5-prop-tiers]', JSON.stringify(tierStats));
 
 function hex(h, a = 255) {
   const s = h.replace('#', '');
@@ -382,91 +464,53 @@ class PixBuf {
   }
   save(fp) {
     this.purgeZeroAlphaRgb();
-    writeBinaryPng(fp, encodePNG(this.w, this.h, this.data));
+    writeBinaryFile(fp, encodePNG(this.w, this.h, this.data));
   }
 }
 
 // ============================================================================
-// 2. Protagonist: CWSJ HD Schoolboy Sheet (256x336 4x4, 64x84 per frame) + UI Portrait
+// 2. Protagonist Fallback & Portrait
 // ============================================================================
 function drawSchoolboyFrame32x42(dirRow, col) {
   let b = new PixBuf(32, 42);
-  const SKIN = hex('#fed4be');
-  const SKIN_SH = hex('#f3b698');
-  const HAIR = hex('#27202b');
-  const HAIR_HI = hex('#3f3446');
-  const SHIRT = hex('#ffffff');
-  const SHIRT_SH = hex('#e2e8f0');
-  const COLLAR = hex('#1d4ed8');
-  const PANTS = hex('#1e3a8a');
-  const PANTS_SH = hex('#172554');
-  const SOCK = hex('#f8fafc');
-  const SHOE = hex('#18181b');
-  const EYE = hex('#18181b');
-
+  const SKIN = hex('#fed4be'), SKIN_SH = hex('#f3b698'), HAIR = hex('#27202b'), HAIR_HI = hex('#3f3446');
+  const SHIRT = hex('#ffffff'), SHIRT_SH = hex('#e2e8f0'), COLLAR = hex('#1d4ed8');
+  const PANTS = hex('#1e3a8a'), PANTS_SH = hex('#172554'), SOCK = hex('#f8fafc'), SHOE = hex('#18181b'), EYE = hex('#18181b');
   const bob = (col === 1 || col === 3) ? -1 : 0;
   const step = col === 1 ? -2 : (col === 3 ? 2 : 0);
 
   if (dirRow === 0 || dirRow === 3) {
-    const lY = 33 + bob + (step < 0 ? -1 : 0);
-    const rY = 33 + bob + (step > 0 ? -1 : 0);
-    b.rect(11, 28 + bob, 14, lY, SKIN);
-    b.rect(17, 28 + bob, 20, rY, SKIN);
-    b.rect(11, lY, 14, lY + 2, SOCK);
-    b.rect(17, rY, 20, rY + 2, SOCK);
-    b.rect(10, lY + 3, 14, lY + 4, SHOE);
-    b.rect(17, rY + 3, 21, rY + 4, SHOE);
-    b.rect(10, 23 + bob, 21, 28 + bob, PANTS);
-    b.rect(15, 25 + bob, 16, 28 + bob, PANTS_SH);
-    b.rect(9, 15 + bob, 22, 23 + bob, SHIRT_SH);
-    b.rect(10, 15 + bob, 21, 22 + bob, SHIRT);
-    const armSwing = step;
-    b.rect(7, 15 + bob, 9, 18 + bob, SHIRT);
-    b.rect(22, 15 + bob, 24, 18 + bob, SHIRT);
-    b.rect(7, 19 + bob + (armSwing > 0 ? -1 : 0), 9, 23 + bob, SKIN);
-    b.rect(22, 19 + bob + (armSwing < 0 ? -1 : 0), 24, 23 + bob, SKIN);
+    const lY = 33 + bob + (step < 0 ? -1 : 0), rY = 33 + bob + (step > 0 ? -1 : 0);
+    b.rect(11, 28 + bob, 14, lY, SKIN); b.rect(17, 28 + bob, 20, rY, SKIN);
+    b.rect(11, lY, 14, lY + 2, SOCK); b.rect(17, rY, 20, rY + 2, SOCK);
+    b.rect(10, lY + 3, 14, lY + 4, SHOE); b.rect(17, rY + 3, 21, rY + 4, SHOE);
+    b.rect(10, 23 + bob, 21, 28 + bob, PANTS); b.rect(15, 25 + bob, 16, 28 + bob, PANTS_SH);
+    b.rect(9, 15 + bob, 22, 23 + bob, SHIRT_SH); b.rect(10, 15 + bob, 21, 22 + bob, SHIRT);
+    b.rect(7, 15 + bob, 9, 18 + bob, SHIRT); b.rect(22, 15 + bob, 24, 18 + bob, SHIRT);
+    b.rect(7, 19 + bob + (step > 0 ? -1 : 0), 9, 23 + bob, SKIN); b.rect(22, 19 + bob + (step < 0 ? -1 : 0), 24, 23 + bob, SKIN);
     if (dirRow === 0) {
-      b.rect(13, 15 + bob, 18, 16 + bob, COLLAR);
-      b.rect(15, 16 + bob, 16, 20 + bob, COLLAR);
-      b.px(18, 18 + bob, hex('#ef4444'));
-      b.px(19, 18 + bob, hex('#facc15'));
+      b.rect(13, 15 + bob, 18, 16 + bob, COLLAR); b.rect(15, 16 + bob, 16, 20 + bob, COLLAR);
+      b.px(18, 18 + bob, hex('#ef4444')); b.px(19, 18 + bob, hex('#facc15'));
     }
-    b.rect(9, 5 + bob, 22, 14 + bob, SKIN);
-    b.rect(9, 13 + bob, 22, 14 + bob, SKIN_SH);
-    b.rect(8, 3 + bob, 23, 8 + bob, HAIR);
-    b.rect(10, 4 + bob, 16, 5 + bob, HAIR_HI);
+    b.rect(9, 5 + bob, 22, 14 + bob, SKIN); b.rect(9, 13 + bob, 22, 14 + bob, SKIN_SH);
+    b.rect(8, 3 + bob, 23, 8 + bob, HAIR); b.rect(10, 4 + bob, 16, 5 + bob, HAIR_HI);
     if (dirRow === 0) {
       b.px(9, 8 + bob, HAIR); b.px(22, 8 + bob, HAIR);
-      b.rect(11, 9 + bob, 12, 11 + bob, EYE);
-      b.rect(19, 9 + bob, 20, 11 + bob, EYE);
+      b.rect(11, 9 + bob, 12, 11 + bob, EYE); b.rect(19, 9 + bob, 20, 11 + bob, EYE);
       b.px(11, 9 + bob, hex('#ffffff')); b.px(19, 9 + bob, hex('#ffffff'));
       b.rect(14, 12 + bob, 17, 12 + bob, hex('#e17065'));
     } else {
-      b.rect(8, 3 + bob, 23, 12 + bob, HAIR);
-      b.rect(11, 5 + bob, 18, 6 + bob, HAIR_HI);
+      b.rect(8, 3 + bob, 23, 12 + bob, HAIR); b.rect(11, 5 + bob, 18, 6 + bob, HAIR_HI);
     }
   } else {
-    const fX = 13 + step;
-    const bX = 15 - step;
-    b.rect(bX, 28 + bob, bX + 3, 33 + bob, SKIN_SH);
-    b.rect(bX, 33 + bob, bX + 3, 35 + bob, SOCK);
-    b.rect(bX - 1, 36 + bob, bX + 3, 37 + bob, SHOE);
-
-    b.rect(fX, 28 + bob, fX + 3, 33 + bob, SKIN);
-    b.rect(fX, 33 + bob, fX + 3, 35 + bob, SOCK);
-    b.rect(fX - 1, 36 + bob, fX + 3, 37 + bob, SHOE);
-
-    b.rect(11, 23 + bob, 20, 28 + bob, PANTS);
-    b.rect(11, 15 + bob, 20, 23 + bob, SHIRT);
-    b.rect(12, 15 + bob, 15, 16 + bob, COLLAR);
+    const fX = 13 + step, bX = 15 - step;
+    b.rect(bX, 28 + bob, bX + 3, 33 + bob, SKIN_SH); b.rect(bX, 33 + bob, bX + 3, 35 + bob, SOCK); b.rect(bX - 1, 36 + bob, bX + 3, 37 + bob, SHOE);
+    b.rect(fX, 28 + bob, fX + 3, 33 + bob, SKIN); b.rect(fX, 33 + bob, fX + 3, 35 + bob, SOCK); b.rect(fX - 1, 36 + bob, fX + 3, 37 + bob, SHOE);
+    b.rect(11, 23 + bob, 20, 28 + bob, PANTS); b.rect(11, 15 + bob, 20, 23 + bob, SHIRT); b.rect(12, 15 + bob, 15, 16 + bob, COLLAR);
     b.rect(14 - Math.sign(step), 16 + bob, 17 - Math.sign(step), 19 + bob, SHIRT_SH);
     b.rect(14 - Math.sign(step), 20 + bob, 16 - Math.sign(step), 23 + bob, SKIN);
-    b.rect(10, 5 + bob, 20, 14 + bob, SKIN);
-    b.rect(9, 3 + bob, 22, 8 + bob, HAIR);
-    b.rect(16, 7 + bob, 22, 12 + bob, HAIR);
-    b.rect(12, 4 + bob, 17, 5 + bob, HAIR_HI);
-    b.rect(11, 9 + bob, 12, 11 + bob, EYE);
-    b.px(11, 12 + bob, hex('#e17065'));
+    b.rect(10, 5 + bob, 20, 14 + bob, SKIN); b.rect(9, 3 + bob, 22, 8 + bob, HAIR); b.rect(16, 7 + bob, 22, 12 + bob, HAIR);
+    b.rect(12, 4 + bob, 17, 5 + bob, HAIR_HI); b.rect(11, 9 + bob, 12, 11 + bob, EYE); b.px(11, 12 + bob, hex('#e17065'));
     if (dirRow === 2) b = b.flipH();
   }
   return b.withGroundShadow(9, 23, 36, 40, 95).epx2x();
@@ -475,29 +519,21 @@ function drawSchoolboyFrame32x42(dirRow, col) {
 const heroTarget = 'public/assets/sprites/char-cwsj-schoolboy.png';
 const b64Buf = Buffer.from(CWSJ_SCHOOLBOY_B64, 'base64');
 if (verifyValidPngBuffer(b64Buf, 256, 336)) {
-  writeBinaryPng(heroTarget, b64Buf);
+  writeBinaryFile(heroTarget, b64Buf);
 } else {
   const heroSheet = new PixBuf(256, 336);
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 4; col++) {
-      heroSheet.blit(drawSchoolboyFrame32x42(row, col), col * 64, row * 84);
-    }
-  }
+  for (let row = 0; row < 4; row++) for (let col = 0; col < 4; col++) heroSheet.blit(drawSchoolboyFrame32x42(row, col), col * 64, row * 84);
   heroSheet.save(heroTarget);
 }
 
 {
   const f0 = drawSchoolboyFrame32x42(0, 0);
   const portrait = new PixBuf(128, 128);
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      const c = f0.get(x, Math.min(83, y + 2));
-      if (c[3] === 0) continue;
-      portrait.px(x * 2, y * 2, c);
-      portrait.px(x * 2 + 1, y * 2, c);
-      portrait.px(x * 2, y * 2 + 1, c);
-      portrait.px(x * 2 + 1, y * 2 + 1, c);
-    }
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    const c = f0.get(x, Math.min(83, y + 2));
+    if (c[3] === 0) continue;
+    portrait.px(x * 2, y * 2, c); portrait.px(x * 2 + 1, y * 2, c);
+    portrait.px(x * 2, y * 2 + 1, c); portrait.px(x * 2 + 1, y * 2 + 1, c);
   }
   portrait.save('public/assets/ui/portrait-student-boy.png');
 }
@@ -629,7 +665,7 @@ putMG(31, b => { b.rect(5, 5, 26, 26, hex('#475569')); for (let i = 8; i <= 24; 
 mgSheet.save('public/assets/sprites/minigame-sprites.png');
 
 // ============================================================================
-// 5. Street Interactive Props Tileset (AC, Sealed Rat-Hole Mesh, Puddle, Bins)
+// 5. Street Interactive Props Tileset
 // ============================================================================
 const streetProps = new PixBuf(512, 512);
 const putSP = (col, row, b) => streetProps.blit(b.outlined().epx2x(), col * 64, row * 64);
@@ -667,27 +703,4 @@ const putSP = (col, row, b) => streetProps.blit(b.outlined().epx2x(), col * 64, 
 }
 streetProps.save('public/assets/tilesets/tileset-hk-street.png');
 
-// ============================================================================
-// 6. V4 建置期完整性強制驗證（11 核心圖檔 + 26 獨立家居物件 + 12 獨立香港街道物件 = 49 檔案）
-// ============================================================================
-const requiredAssets = [
-  'public/assets/ui/cwsj-logo.png',
-  'public/assets/ui/portrait-student-boy.png',
-  'public/assets/maps/map-home.png',
-  'public/assets/maps/map-street.png',
-  'public/assets/sprites/home-props-atlas.png',
-  'public/assets/sprites/home-props-atlas.json',
-  'public/assets/sprites/street-props-manifest.json',
-  'public/assets/sprites/char-cwsj-schoolboy.png',
-  'public/assets/sprites/sprites-npcs-pests.png',
-  'public/assets/sprites/minigame-sprites.png',
-  'public/assets/tilesets/tileset-hk-street.png',
-  ...Object.keys(allHomePropPacks).map((k) => `public/assets/sprites/props-home/${k}.png`),
-  ...Object.keys(STREET_PROPS_PACK).map((k) => `public/assets/sprites/props-street/${k}.png`)
-];
-for (const rp of requiredAssets) {
-  if (!fs.existsSync(rp) || fs.statSync(rp).size < 64) {
-    throw new Error(`Missing or invalid required V4 asset: ${rp}`);
-  }
-}
-console.log(`[v4-verified] All ${requiredAssets.length} V4 HD assets verified successfully!`);
+console.log('[v5-stage1] De-greened standalone props, runtime config & crisp assets verified!');

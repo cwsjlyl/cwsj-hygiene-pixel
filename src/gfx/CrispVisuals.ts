@@ -1,19 +1,29 @@
 import Phaser from 'phaser';
 
+const CRISP_FONT_STACK = '"PingFang HK", "Noto Sans TC", "Heiti TC", "Microsoft JhengHei", system-ui, sans-serif';
+
 export function installCrispChineseTextPatch(): void {
   const proto = Phaser.GameObjects.Text.prototype as unknown as {
     updateText: () => Phaser.GameObjects.Text;
-    __cwsjPatched?: boolean;
+    __cwsjPatchedV5?: boolean;
   };
-  if (proto.__cwsjPatched) return;
-  proto.__cwsjPatched = true;
+  if (proto.__cwsjPatchedV5) return;
+  proto.__cwsjPatchedV5 = true;
 
   const origUpdate = proto.updateText;
   proto.updateText = function patchedText(this: Phaser.GameObjects.Text) {
-    if ((this.style?.resolution ?? 1) < 4) {
-      this.style.resolution = 4;
+    if (this.style) {
+      if ((this.style.resolution ?? 1) < 3) {
+        this.style.resolution = 3;
+      }
+      if (!this.style.fontFamily || this.style.fontFamily === 'Courier' || this.style.fontFamily === 'monospace') {
+        this.style.fontFamily = CRISP_FONT_STACK;
+      }
     }
     const res = origUpdate.call(this);
+    if (this.texture) {
+      this.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
     if (this.frame?.source) {
       this.frame.source.scaleMode = Phaser.ScaleModes.LINEAR;
     }
@@ -21,15 +31,18 @@ export function installCrispChineseTextPatch(): void {
   };
 }
 
-/**
- * 安全無阻塞執行期 Sprite 濾鏡與去背檢查：
- * 若圖集四角已為透明 RGBA（如建置期已徹底去背之圖集），直接啟用 NEAREST 像素銳利濾鏡而不改寫 WebGL 貼圖來源，避免跨瀏覽器貼圖凍結。
- */
-export function sanitizeSpriteTextureAlpha(scene: Phaser.Scene, texKey: string): void {
+export function sanitizeSpriteTextureAlpha(
+  scene: Phaser.Scene,
+  texKey: string,
+  filterMode: Phaser.Textures.FilterMode = Phaser.Textures.FilterMode.NEAREST,
+  stripNeonGreen = false
+): void {
   try {
     if (!scene.textures.exists(texKey)) return;
     const tex = scene.textures.get(texKey);
-    tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    tex.setFilter(filterMode);
+
+    if (!stripNeonGreen) return;
 
     const srcImg = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
     if (!srcImg || !srcImg.width || !srcImg.height) return;
@@ -46,78 +59,24 @@ export function sanitizeSpriteTextureAlpha(scene: Phaser.Scene, texKey: string):
     ctx.drawImage(srcImg, 0, 0);
     const imgData = ctx.getImageData(0, 0, w, h);
     const d = imgData.data;
+    let modified = false;
 
-    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + (w - 1)) * 4];
-    const hasOpaqueCorners = corners.every((idx) => d[idx + 3] > 240);
-
-    // 建置期已保證純透明 RGBA，直接返回避免破壞 WebGL HTMLImageElement TextureSource
-    if (!hasOpaqueCorners) return;
-
-    const passable = new Uint8Array(w * h);
-    const lumArr = new Float32Array(w * h);
-    const chromaArr = new Uint8Array(w * h);
-    for (let p = 0; p < w * h; p++) {
-      const i = p * 4;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
       const r = d[i], g = d[i + 1], b = d[i + 2];
-      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-      lumArr[p] = (r + g + b) / 3;
-      chromaArr[p] = maxC - minC;
-      if (chromaArr[p] <= 22 && lumArr[p] >= 108) passable[p] = 1;
-    }
-
-    const bgMask = new Uint8Array(w * h);
-    const visited = new Uint8Array(w * h);
-    const queue = new Int32Array(w * h);
-
-    for (let start = 0; start < w * h; start++) {
-      if (!passable[start] || visited[start]) continue;
-      let head = 0, tail = 0;
-      queue[tail++] = start;
-      visited[start] = 1;
-      let touchesBorder = false;
-      let darkSq = 0, lightSq = 0;
-
-      while (head < tail) {
-        const cur = queue[head++];
-        const cx = cur % w, cy = (cur / w) | 0;
-        if (cx === 0 || cy === 0 || cx === w - 1 || cy === h - 1) touchesBorder = true;
-        const l = lumArr[cur];
-        if (l >= 110 && l <= 145) darkSq++;
-        else if (l >= 220 && l <= 252) lightSq++;
-
-        const neighbors = [
-          cx > 0 ? cur - 1 : -1,
-          cx < w - 1 ? cur + 1 : -1,
-          cy > 0 ? cur - w : -1,
-          cy < h - 1 ? cur + w : -1
-        ];
-        for (const nb of neighbors) {
-          if (nb >= 0 && passable[nb] && !visited[nb]) {
-            visited[nb] = 1;
-            queue[tail++] = nb;
-          }
-        }
-      }
-
-      if (touchesBorder || (darkSq >= 10 && lightSq >= 10)) {
-        for (let k = 0; k < tail; k++) bgMask[queue[k]] = 1;
-      }
-    }
-
-    for (let p = 0; p < w * h; p++) {
-      if (bgMask[p]) {
-        const i = p * 4;
+      if (g > 150 && g - r >= 48 && g - b >= 48) {
         d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0;
+        modified = true;
       }
     }
 
-    ctx.putImageData(imgData, 0, 0);
-    if (tex.source[0]) {
+    if (modified && tex.source[0]) {
+      ctx.putImageData(imgData, 0, 0);
       (tex.source[0] as unknown as { isCanvas: boolean }).isCanvas = true;
       tex.source[0].image = canvas as unknown as HTMLImageElement;
       tex.source[0].update();
+      tex.setFilter(filterMode);
     }
-    tex.setFilter(Phaser.Textures.FilterMode.NEAREST);
   } catch (err) {
     console.warn('[CrispVisuals] sanitizeSpriteTextureAlpha skipped:', texKey, err);
   }
@@ -127,16 +86,22 @@ export function syncHeroPortraitToDom(scene: Phaser.Scene): void {
   try {
     if (!scene.textures.exists('hero')) return;
     const tex = scene.textures.get('hero');
+    const firstFrame = tex.get(0);
     const src = tex.getSourceImage() as HTMLImageElement | HTMLCanvasElement;
     if (!src || !src.width || !src.height) return;
 
+    const fw = firstFrame?.cutWidth || Math.floor(src.width / 4);
+    const fh = firstFrame?.cutHeight || Math.floor(src.height / 4);
+    const srcColX = src.width >= 448 ? fw : 0;
+
     const c = document.createElement('canvas');
-    c.width = 128;
-    c.height = 168;
+    c.width = 160;
+    c.height = 160;
     const ctx = c.getContext('2d');
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(src, 0, 0, 64, 84, 0, 0, 128, 168);
+    const cropH = Math.min(fh, Math.round(fw * 1.08));
+    ctx.drawImage(src, srcColX, 0, fw, cropH, 8, 6, 144, 148);
     const url = c.toDataURL('image/png');
 
     document.querySelectorAll<HTMLImageElement>('#dialogue-portrait, .hero-avatar, .cert-avatar').forEach((img) => {

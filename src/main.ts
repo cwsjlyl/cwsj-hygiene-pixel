@@ -19,7 +19,9 @@ function bootPhaserGame(): void {
     width: 1280,
     height: 720,
     backgroundColor: '#0b1120',
-    pixelArt: true,
+    // 關閉全局強制 pixelArt，避免中文字體被 NEAREST 濾鏡切碎；像素貼圖於 PreloadScene 獨立設定濾鏡
+    pixelArt: false,
+    antialias: true,
     roundPixels: true,
     scale: {
       mode: Phaser.Scale.FIT,

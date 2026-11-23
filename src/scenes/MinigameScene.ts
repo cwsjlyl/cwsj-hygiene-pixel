@@ -34,19 +34,19 @@ export class MinigameScene extends Phaser.Scene {
   create(): void {
     sound.playBgm('minigame');
 
-    this.add.rectangle(640, 360, 1280, 720, 0x060b16, 0.88);
-    this.add.rectangle(640, 392, 1060, 560, 0x0f172a).setStrokeStyle(6, 0xfbbf24);
-    this.add.rectangle(640, 142, 1060, 58, 0x1e3a8a).setStrokeStyle(4, 0xfbbf24);
+    this.add.rectangle(640, 360, 1280, 720, 0x060b16, 0.9);
+    this.add.rectangle(640, 396, 1080, 572, 0x0f172a).setStrokeStyle(6, 0xfbbf24);
+    this.add.rectangle(640, 140, 1080, 62, 0x1e3a8a).setStrokeStyle(4, 0xfbbf24);
 
-    this.add.rectangle(640, 192, 620, 18, 0x1e293b).setStrokeStyle(2, 0x64748b);
-    this.progFill = this.add.rectangle(332, 192, 4, 12, 0x10b981).setOrigin(0, 0.5);
+    this.add.rectangle(620, 194, 620, 20, 0x1e293b).setStrokeStyle(2, 0x64748b);
+    this.progFill = this.add.rectangle(312, 194, 4, 14, 0x10b981).setOrigin(0, 0.5);
 
-    this.statusText = this.add.text(980, 192, '連擊 x0', {
-      fontSize: '18px', color: '#fde047', fontStyle: 'bold'
+    this.statusText = this.add.text(985, 194, '連擊 x0', {
+      fontSize: '21px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
     }).setOrigin(0.5);
 
-    const exitBtn = this.add.text(1135, 142, '✕ 返回', {
-      fontSize: '17px', color: '#ffffff', backgroundColor: '#dc2626', padding: { x: 10, y: 6 }, fontStyle: 'bold'
+    const exitBtn = this.add.text(1132, 140, '✕ 返回', {
+      fontSize: '19px', color: '#ffffff', backgroundColor: '#dc2626', padding: { x: 12, y: 7 }, fontStyle: 'bold'
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     exitBtn.on('pointerdown', () => {
       sound.pop();
@@ -67,8 +67,12 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private setHeader(title: string, tip: string): void {
-    this.add.text(140, 142, title, { fontSize: '23px', color: '#fde047', fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.add.text(640, 228, tip, { fontSize: '16px', color: '#bae6fd', fontStyle: 'bold' }).setOrigin(0.5);
+    this.add.text(132, 140, title, {
+      fontSize: '26px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 4
+    }).setOrigin(0, 0.5);
+    this.add.text(640, 234, tip, {
+      fontSize: '19px', color: '#e0f2fe', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3, wordWrap: { width: 1020 }
+    }).setOrigin(0.5);
   }
 
   private updateProgress(ratio: number): void {
@@ -94,8 +98,10 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private floatScore(x: number, y: number, label: string, color = '#fde047'): void {
-    const t = this.add.text(x, y, label, { fontSize: '19px', color, fontStyle: 'bold', stroke: '#0f172a', strokeThickness: 4 }).setOrigin(0.5);
-    this.tweens.add({ targets: t, y: y - 38, alpha: 0, duration: 650, onComplete: () => t.destroy() });
+    const t = this.add.text(x, y, label, {
+      fontSize: '22px', color, fontStyle: 'bold', stroke: '#020617', strokeThickness: 4
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: t, y: y - 38, alpha: 0, duration: 680, onComplete: () => t.destroy() });
   }
 
   private winGame(): void {
@@ -106,9 +112,9 @@ export class MinigameScene extends Phaser.Scene {
     const bonus = medal === 'gold' ? 80 : medal === 'silver' ? 40 : 15;
     const medalLabel = medal === 'gold' ? '🥇 金牌通關' : medal === 'silver' ? '🥈 銀牌通關' : '🥉 銅牌通關';
 
-    this.add.rectangle(640, 410, 520, 190, 0x064e3b).setStrokeStyle(5, 0xfbbf24).setDepth(500);
-    this.add.text(640, 390, `${medalLabel}！\n連擊獎勵 +${bonus} 分`, {
-      fontSize: '28px', color: '#fde047', fontStyle: 'bold', align: 'center'
+    this.add.rectangle(640, 410, 540, 200, 0x064e3b).setStrokeStyle(5, 0xfbbf24).setDepth(500);
+    this.add.text(640, 405, `${medalLabel}！\n連擊獎勵 +${bonus} 分`, {
+      fontSize: '30px', color: '#fde047', fontStyle: 'bold', align: 'center', stroke: '#020617', strokeThickness: 4
     }).setOrigin(0.5).setDepth(501);
 
     this.time.delayedCall(1100, () => this.exitScene(true, medal, bonus));
@@ -125,7 +131,7 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupWashHands(): void {
     this.setHeader('🧼 洗手泡泡滅菌戰', '輕觸或滑過游走的「像素病毒與細菌」，發射番梘泡泡將雙手徹底洗淨（消滅 12 隻）！');
-    this.add.rectangle(640, 435, 920, 360, 0x0c4a6e).setStrokeStyle(3, 0x38bdf8);
+    this.add.rectangle(640, 442, 920, 355, 0x0c4a6e).setStrokeStyle(3, 0x38bdf8);
     this.add.image(255, 525, 'home-props', 'sink_vanity').setScale(1.15).setAlpha(0.85);
 
     this.add.image(560, 450, 'mg', 0).setScale(2.3).setAlpha(0.95);
@@ -137,11 +143,11 @@ export class MinigameScene extends Phaser.Scene {
     const spawnGerm = () => {
       if (this.finished) return;
       const frame = Math.random() < 0.5 ? 3 : 4;
-      const g = this.add.sprite(260 + Math.random() * 760, 290 + Math.random() * 250, 'mg', frame).setScale(1.25).setInteractive({ useHandCursor: true });
+      const g = this.add.sprite(260 + Math.random() * 760, 295 + Math.random() * 245, 'mg', frame).setScale(1.25).setInteractive({ useHandCursor: true });
       this.tweens.add({
         targets: g,
         x: Phaser.Math.Clamp(g.x + (Math.random() - 0.5) * 260, 240, 1050),
-        y: Phaser.Math.Clamp(g.y + (Math.random() - 0.5) * 180, 280, 560),
+        y: Phaser.Math.Clamp(g.y + (Math.random() - 0.5) * 180, 285, 560),
         duration: 1100 + Math.random() * 600,
         yoyo: true,
         repeat: -1
@@ -177,20 +183,20 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private setupBrushTeeth(): void {
-    this.setHeader('🪥 護齒刷牙大掃除', '按住並來回滑動刷洗全部 10 顆「黃色牙菌膜像素牙齒」（每顆刷 3 下），並拍走紅色蛀牙菌！');
-    this.add.rectangle(640, 435, 920, 360, 0x3b0764).setStrokeStyle(3, 0xf472b6);
+    this.setHeader('🪥 護齒刷牙大掃除', '按住並來回滑動刷洗全部 10 顆「黃色牙菌膜牙齒」（每顆刷 3 下），並拍走紅色蛀牙菌！');
+    this.add.rectangle(640, 442, 920, 355, 0x3b0764).setStrokeStyle(3, 0xf472b6);
     this.add.image(235, 325, 'home-props', 'mirror').setScale(1.3);
     this.add.image(1040, 330, 'home-props', 'towel').setScale(1.3);
 
     const brush = this.add.image(640, 540, 'mg', 7).setScale(1.7).setDepth(50);
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      brush.setPosition(Phaser.Math.Clamp(p.x, 220, 1060), Phaser.Math.Clamp(p.y, 270, 590));
+      brush.setPosition(Phaser.Math.Clamp(p.x, 220, 1060), Phaser.Math.Clamp(p.y, 275, 590));
     });
 
     let cleanTeeth = 0;
     for (let i = 0; i < 10; i++) {
       const tx = 350 + (i % 5) * 145;
-      const ty = i < 5 ? 355 : 495;
+      const ty = i < 5 ? 360 : 500;
       const tooth = this.add.sprite(tx, ty, 'mg', 6).setScale(1.65).setInteractive({ useHandCursor: true });
       let scrubs = 0;
       let cooldown = 0;
@@ -225,7 +231,7 @@ export class MinigameScene extends Phaser.Scene {
       loop: true,
       callback: () => {
         if (this.finished) return;
-        const imp = this.add.sprite(300 + Math.random() * 680, 425, 'mg', 8).setScale(1.25).setInteractive({ useHandCursor: true });
+        const imp = this.add.sprite(300 + Math.random() * 680, 430, 'mg', 8).setScale(1.25).setInteractive({ useHandCursor: true });
         imp.on('pointerdown', () => {
           this.combo++;
           sound.combo(this.combo);
@@ -239,26 +245,26 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private setupTrimNails(): void {
-    this.setHeader('💅 精準剪甲節奏王', '當上方移動的「像素銀色指甲鉗」對準下方藏垢長指甲時，點擊畫面精準修剪全部 5 指！');
-    this.add.rectangle(640, 435, 920, 360, 0x1e293b).setStrokeStyle(3, 0x38bdf8);
+    this.setHeader('💅 精準剪甲節奏王', '當上方移動的「銀色指甲鉗」對準下方藏垢長指甲時，點擊畫面精準修剪全部 5 指！');
+    this.add.rectangle(640, 442, 920, 355, 0x1e293b).setStrokeStyle(3, 0x38bdf8);
     this.add.image(245, 515, 'home-props', 'computer_desk').setScale(1.1).setAlpha(0.85);
 
     const fingers: { x: number; spr: Phaser.GameObjects.Sprite; trimmed: boolean }[] = [];
     for (let i = 0; i < 5; i++) {
       const fx = 360 + i * 145;
-      const spr = this.add.sprite(fx, 515, 'mg', 9).setScale(1.9);
-      this.add.circle(fx, 435, 18, 0x10b981, 0.28).setStrokeStyle(2, 0x34d399);
+      const spr = this.add.sprite(fx, 518, 'mg', 9).setScale(1.9);
+      this.add.circle(fx, 438, 18, 0x10b981, 0.28).setStrokeStyle(2, 0x34d399);
       fingers.push({ x: fx, spr, trimmed: false });
     }
 
-    const clipper = this.add.sprite(280, 345, 'mg', 11).setScale(1.8).setAngle(90);
+    const clipper = this.add.sprite(280, 348, 'mg', 11).setScale(1.8).setAngle(90);
     this.tweens.add({ targets: clipper, x: 1020, duration: 1550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     let doneCount = 0;
-    const zone = this.add.rectangle(640, 435, 920, 360, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
+    const zone = this.add.rectangle(640, 442, 920, 355, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
     zone.on('pointerdown', () => {
       if (this.finished) return;
-      this.tweens.add({ targets: clipper, y: 415, duration: 90, yoyo: true });
+      this.tweens.add({ targets: clipper, y: 418, duration: 90, yoyo: true });
       const hit = fingers.find(f => !f.trimmed && Math.abs(f.x - clipper.x) <= 44);
       if (hit) {
         hit.trimmed = true;
@@ -281,9 +287,9 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private setupCoverFood(): void {
-    this.setHeader('🍲 餐桌防鼠保衛戰', '點擊 4 碟餸菜蓋上「像素防塵罩」，並拍走偷襲的像素老鼠與蒼蠅（完成加蓋及擊退 6 隻害蟲）！');
-    this.add.rectangle(640, 435, 920, 360, 0x451a03).setStrokeStyle(3, 0xf59e0b);
-    this.add.image(640, 455, 'home-props', 'dining_table').setScale(3.1);
+    this.setHeader('🍲 餐桌防鼠保衛戰', '點擊 4 碟餸菜蓋上「防塵罩」，並拍走偷襲的老鼠與蒼蠅（完成加蓋及擊退 6 隻害蟲）！');
+    this.add.rectangle(640, 442, 920, 355, 0x451a03).setStrokeStyle(3, 0xf59e0b);
+    this.add.image(640, 460, 'home-props', 'dining_table').setScale(3.1);
 
     let covered = 0;
     let swatted = 0;
@@ -292,7 +298,7 @@ export class MinigameScene extends Phaser.Scene {
       if (covered >= 4 && swatted >= 6) this.winGame();
     };
 
-    const positions = [[510, 385], [770, 385], [510, 475], [770, 475]];
+    const positions = [[510, 390], [770, 390], [510, 480], [770, 480]];
     positions.forEach(([px, py]) => {
       const dish = this.add.sprite(px, py, 'mg', 12).setScale(1.6).setInteractive({ useHandCursor: true });
       let isCov = false;
@@ -316,13 +322,13 @@ export class MinigameScene extends Phaser.Scene {
         if (this.finished) return;
         const isRat = Math.random() < 0.6;
         const side = Math.random() < 0.5 ? 210 : 1070;
-        const py = 290 + Math.random() * 280;
+        const py = 295 + Math.random() * 275;
         const pest = isRat
           ? this.add.sprite(side, py, 'npcs', 24).setScale(1.3).play('rat-scurry')
           : this.add.sprite(side, py, 'mg', 15).setScale(1.2);
         pest.setFlipX(side < 640).setInteractive({ useHandCursor: true });
         this.tweens.add({
-          targets: pest, x: 640, y: 435, duration: 2400,
+          targets: pest, x: 640, y: 440, duration: 2400,
           onComplete: () => {
             if (pest.active) {
               this.mistakes++;
@@ -347,10 +353,10 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private setupClearSaucer(): void {
-    this.setHeader('🪴 倒積水滅孑孓挑戰', '連點 4 個積水花盆底盤倒走積水，並點擊消滅水中扭動的「像素孑孓」與飛出的白紋伊蚊！');
-    this.add.rectangle(640, 435, 920, 360, 0x14532d).setStrokeStyle(3, 0x4ade80);
-    this.add.image(235, 345, 'home-props', 'plant_large').setScale(1.1);
-    this.add.image(1045, 355, 'home-props', 'plant_whitepot').setScale(1.2);
+    this.setHeader('🪴 倒積水滅孑孓挑戰', '連點 4 個積水花盆底盤倒走積水，並點擊消滅水中扭動的「孑孓」與飛出的白紋伊蚊！');
+    this.add.rectangle(640, 442, 920, 355, 0x14532d).setStrokeStyle(3, 0x4ade80);
+    this.add.image(235, 350, 'home-props', 'plant_large').setScale(1.1);
+    this.add.image(1045, 360, 'home-props', 'plant_whitepot').setScale(1.2);
 
     let dryCount = 0;
     let larvaCleared = 0;
@@ -361,26 +367,26 @@ export class MinigameScene extends Phaser.Scene {
 
     for (let i = 0; i < 4; i++) {
       const sx = 310 + i * 220;
-      const saucer = this.add.sprite(sx, 515, 'mg', 16).setScale(1.85).setInteractive({ useHandCursor: true });
+      const saucer = this.add.sprite(sx, 520, 'mg', 16).setScale(1.85).setInteractive({ useHandCursor: true });
       let taps = 0;
       saucer.on('pointerdown', () => {
         if (this.finished || taps >= 3) return;
         taps++;
         sound.pop();
         this.tweens.add({ targets: saucer, angle: taps * 10, duration: 90, yoyo: true });
-        this.burst(sx, 505, 0x38bdf8, 6);
+        this.burst(sx, 510, 0x38bdf8, 6);
         if (taps >= 3) {
           saucer.setFrame(18);
           dryCount++;
           this.combo++;
           sound.combo(this.combo);
-          this.floatScore(sx, 470, '✨積水清乾!');
+          this.floatScore(sx, 475, '✨積水清乾!');
           check();
         }
       });
 
       for (let k = 0; k < 2; k++) {
-        const lv = this.add.sprite(sx - 24 + k * 48, 405 - k * 45, 'mg', 17).setScale(1.35).setInteractive({ useHandCursor: true });
+        const lv = this.add.sprite(sx - 24 + k * 48, 410 - k * 45, 'mg', 17).setScale(1.35).setInteractive({ useHandCursor: true });
         this.tweens.add({ targets: lv, angle: { from: -18, to: 18 }, y: lv.y - 22, duration: 520, yoyo: true, repeat: -1 });
         lv.on('pointerdown', () => {
           if (this.finished) return;
@@ -398,7 +404,7 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupRecycleBottles(): void {
     this.setHeader('♻️ 香港三色回收快手', '看準中央出現的垃圾，點擊下方正確的「藍廢紙、黃鋁罐、啡膠樽、有蓋垃圾桶」（完成 8 件）！');
-    this.add.rectangle(640, 435, 920, 360, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
+    this.add.rectangle(640, 442, 920, 355, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
 
     const items = [
       { frame: 20, bin: 0, name: '廢報紙 → 藍廢紙箱' },
@@ -410,18 +416,22 @@ export class MinigameScene extends Phaser.Scene {
     let cur = items[2];
 
     const curSpr = this.add.sprite(640, 355, 'mg', cur.frame).setScale(2.2);
-    const curLabel = this.add.text(640, 425, '請選擇下方正確回收桶！', { fontSize: '18px', color: '#fde047', fontStyle: 'bold' }).setOrigin(0.5);
+    const curLabel = this.add.text(640, 428, '請選擇下方正確回收桶！', {
+      fontSize: '21px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
+    }).setOrigin(0.5);
 
     const bins = [
-      { idx: 0, frame: 23, title: '藍：廢紙', x: 340 },
-      { idx: 1, frame: 24, title: '黃：鋁罐', x: 540 },
-      { idx: 2, frame: 25, title: '啡：膠樽', x: 740 },
-      { idx: 3, frame: 14, title: '有蓋垃圾桶', x: 940 }
+      { idx: 0, frame: 23, title: '藍：廢紙', x: 335 },
+      { idx: 1, frame: 24, title: '黃：鋁罐', x: 538 },
+      { idx: 2, frame: 25, title: '啡：膠樽', x: 742 },
+      { idx: 3, frame: 14, title: '有蓋垃圾桶', x: 945 }
     ];
 
     bins.forEach(b => {
       const bs = this.add.sprite(b.x, 525, 'mg', b.frame).setScale(1.75).setInteractive({ useHandCursor: true });
-      this.add.text(b.x, 588, b.title, { fontSize: '16px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+      this.add.text(b.x, 592, b.title, {
+        fontSize: '19px', color: '#ffffff', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
+      }).setOrigin(0.5);
       bs.on('pointerdown', () => {
         if (this.finished) return;
         if (b.idx === cur.bin) {
@@ -451,24 +461,26 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupSprayMosquito(): void {
     this.setHeader('🦟 冷氣止漏 ＋ DEET 驅蚊射擊', '先點左上「滴水冷氣」修好排水喉，再點擊噴灑 DEET 消滅 7 隻白紋伊蚊（切勿誤噴彩蝶）！');
-    this.add.rectangle(640, 435, 920, 360, 0x064e3b).setStrokeStyle(3, 0x34d399);
+    this.add.rectangle(640, 442, 920, 355, 0x064e3b).setStrokeStyle(3, 0x34d399);
 
     let acFixed = false;
     let kills = 0;
-    const acSpr = this.add.sprite(290, 325, 'tiles-street', 9).setScale(1.6).setInteractive({ useHandCursor: true });
-    const acHint = this.add.text(290, 385, '🔧 點擊修好滴水冷氣', { fontSize: '15px', color: '#fde047', fontStyle: 'bold' }).setOrigin(0.5);
+    const acSpr = this.add.sprite(300, 332, 'tiles-street', 9).setScale(1.65).setInteractive({ useHandCursor: true });
+    const acHint = this.add.text(300, 396, '🔧 點擊修好滴水冷氣', {
+      fontSize: '18px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
+    }).setOrigin(0.5);
     acSpr.on('pointerdown', () => {
       if (acFixed || this.finished) return;
       acFixed = true;
       acSpr.setFrame(10);
       acHint.setText('✅ 排水喉已接妥').setColor('#6ee7b7');
       sound.combo(3);
-      this.burst(290, 325, 0x38bdf8, 12);
+      this.burst(300, 332, 0x38bdf8, 12);
       this.updateProgress((1 + kills) / 8);
       if (acFixed && kills >= 7) this.winGame();
     });
 
-    const can = this.add.image(640, 565, 'mg', 26).setScale(1.6).setDepth(40);
+    const can = this.add.image(640, 568, 'mg', 26).setScale(1.6).setDepth(40);
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => { can.x = Phaser.Math.Clamp(p.x, 260, 1020); });
 
     this.time.addEvent({
@@ -477,8 +489,8 @@ export class MinigameScene extends Phaser.Scene {
       callback: () => {
         if (this.finished) return;
         const isButterfly = Math.random() < 0.25;
-        const sx = 360 + Math.random() * 640;
-        const sy = 290 + Math.random() * 210;
+        const sx = 370 + Math.random() * 630;
+        const sy = 295 + Math.random() * 205;
         const target = isButterfly
           ? this.add.sprite(sx, sy, 'mg', 28).setScale(1.3)
           : this.add.sprite(sx, sy, 'npcs', 20).setScale(1.45).play('mosquito-fly');
@@ -516,20 +528,22 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupSealRatHole(): void {
     this.setHeader('🕳️ 防鼠三部曲：封鎖破損鼠洞', '先點選下方工具：① 用「水泥灰刀」批平 3 個鼠洞 → ② 再釘上「金屬鐵絲網」（切勿用廢報紙）！');
-    this.add.rectangle(640, 435, 920, 360, 0x334155).setStrokeStyle(3, 0xfbbf24);
+    this.add.rectangle(640, 442, 920, 355, 0x334155).setStrokeStyle(3, 0xfbbf24);
 
     let selectedTool: 'cement' | 'mesh' | 'paper' = 'cement';
     const tools = [
-      { id: 'cement' as const, frame: 30, label: '① 水泥砂漿', x: 420 },
+      { id: 'cement' as const, frame: 30, label: '① 水泥砂漿', x: 400 },
       { id: 'mesh' as const, frame: 31, label: '② 金屬防鼠網', x: 640 },
-      { id: 'paper' as const, frame: 20, label: '❌ 塞舊報紙', x: 860 }
+      { id: 'paper' as const, frame: 20, label: '❌ 塞舊報紙', x: 880 }
     ];
     const toolBoxes: Phaser.GameObjects.Rectangle[] = [];
     tools.forEach((t, idx) => {
-      const box = this.add.rectangle(t.x, 545, 175, 76, 0x0f172a).setStrokeStyle(3, idx === 0 ? 0xfde047 : 0x64748b).setInteractive({ useHandCursor: true });
+      const box = this.add.rectangle(t.x, 548, 210, 80, 0x0f172a).setStrokeStyle(3, idx === 0 ? 0xfde047 : 0x64748b).setInteractive({ useHandCursor: true });
       toolBoxes.push(box);
-      this.add.image(t.x - 52, 545, 'mg', t.frame).setScale(1.0);
-      this.add.text(t.x + 18, 545, t.label, { fontSize: '15px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5);
+      this.add.image(t.x - 68, 548, 'mg', t.frame).setScale(1.0);
+      this.add.text(t.x + 18, 548, t.label, {
+        fontSize: '18px', color: '#ffffff', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
+      }).setOrigin(0.5);
       box.on('pointerdown', () => {
         selectedTool = t.id;
         sound.pop();
@@ -539,9 +553,11 @@ export class MinigameScene extends Phaser.Scene {
 
     let sealedCount = 0;
     for (let i = 0; i < 3; i++) {
-      const hx = 370 + i * 270;
-      const hole = this.add.sprite(hx, 385, 'mg', 29).setScale(2.1).setInteractive({ useHandCursor: true });
-      const stLabel = this.add.text(hx, 465, '狀態：破損鼠洞', { fontSize: '15px', color: '#fca5a5', fontStyle: 'bold' }).setOrigin(0.5);
+      const hxPos = 370 + i * 270;
+      const hole = this.add.sprite(hxPos, 385, 'mg', 29).setScale(2.1).setInteractive({ useHandCursor: true });
+      const stLabel = this.add.text(hxPos, 468, '狀態：破損鼠洞', {
+        fontSize: '18px', color: '#fca5a5', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
+      }).setOrigin(0.5);
       let stage = 0;
 
       hole.on('pointerdown', () => {
@@ -550,7 +566,7 @@ export class MinigameScene extends Phaser.Scene {
           this.mistakes++;
           sound.wrong();
           this.cameras.main.shake(140, 0.007);
-          this.floatScore(hx, 350, '🐭 老鼠門齒咬穿報紙了！', '#fca5a5');
+          this.floatScore(hxPos, 350, '🐭 老鼠門齒咬穿報紙了！', '#fca5a5');
           return;
         }
         if (stage === 0 && selectedTool === 'cement') {
@@ -559,7 +575,7 @@ export class MinigameScene extends Phaser.Scene {
           stLabel.setText('已批水泥 → 請釘鐵絲網').setColor('#fde047');
           this.combo++;
           sound.combo(this.combo);
-          this.burst(hx, 385, 0xcbd5e1, 10);
+          this.burst(hxPos, 385, 0xcbd5e1, 10);
           this.updateProgress((sealedCount * 2 + 1) / 6);
         } else if (stage === 1 && selectedTool === 'mesh') {
           stage = 2;
@@ -568,12 +584,12 @@ export class MinigameScene extends Phaser.Scene {
           sealedCount++;
           this.combo++;
           sound.combo(this.combo);
-          this.burst(hx, 385, 0x34d399, 12);
+          this.burst(hxPos, 385, 0x34d399, 12);
           this.updateProgress((sealedCount * 2) / 6);
           if (sealedCount >= 3) this.winGame();
         } else {
           sound.wrong();
-          this.floatScore(hx, 350, stage === 0 ? '請先用 ① 水泥砂漿！' : '請改用 ② 金屬防鼠網！', '#fde047');
+          this.floatScore(hxPos, 350, stage === 0 ? '請先用 ① 水泥砂漿！' : '請改用 ② 金屬防鼠網！', '#fde047');
         }
       });
     }
@@ -581,7 +597,7 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupFehdQuiz(): void {
     this.setHeader('👮 食環署主任終極常識考核', '回答 3 道香港環境衛生常識問題，獲取彩雲聖若瑟小學榮譽證書！');
-    this.add.sprite(285, 425, 'npcs', 0).setScale(2.6);
+    this.add.sprite(265, 435, 'npcs', 0).setScale(2.7);
 
     const qs = [
       {
@@ -602,7 +618,9 @@ export class MinigameScene extends Phaser.Scene {
     ];
 
     let qIdx = 0;
-    const qText = this.add.text(400, 305, '', { fontSize: '20px', color: '#ffffff', fontStyle: 'bold', wordWrap: { width: 660 } });
+    const qText = this.add.text(375, 295, '', {
+      fontSize: '22px', color: '#ffffff', fontStyle: 'bold', wordWrap: { width: 700 }, stroke: '#020617', strokeThickness: 3, lineSpacing: 6
+    });
     const optBtns: Phaser.GameObjects.Text[] = [];
 
     const renderQ = () => {
@@ -611,8 +629,14 @@ export class MinigameScene extends Phaser.Scene {
       const cur = qs[qIdx];
       qText.setText(cur.q);
       cur.opts.forEach((op, oi) => {
-        const btn = this.add.text(400, 395 + oi * 62, op, {
-          fontSize: '17px', color: '#f8fafc', backgroundColor: '#1e293b', padding: { x: 16, y: 12 }, fontStyle: 'bold', fixedWidth: 650
+        const btn = this.add.text(375, 392 + oi * 70, op, {
+          fontSize: '19px',
+          color: '#f8fafc',
+          backgroundColor: '#1e293b',
+          padding: { x: 18, y: 13 },
+          fontStyle: 'bold',
+          fixedWidth: 700,
+          wordWrap: { width: 664 }
         }).setInteractive({ useHandCursor: true });
         btn.on('pointerdown', () => {
           if (this.finished) return;
