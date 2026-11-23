@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { sound } from '../audio/RetroSound';
 import { HomeStandalonePropKey, STREET_STANDALONE_PROP_SPECS } from '../gfx/v4StandaloneAssetKeys';
+import { V5_HD_CHARS_ENABLED, V5_VALID_STREET_PROPS } from '../gfx/v5RuntimeConfig';
 import { VirtualJoystick } from '../input/VirtualJoystick';
 import { gameState, MapId, MedalRank } from '../state/gameState';
 
@@ -68,7 +69,7 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到 V4 緊湊版高清像素家居！全屋一目了然，你可以用搖桿／方向鍵走近發光家具按 A，或在 iPad 直接輕觸發光任務點互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
+      `${gameState.studentName}，歡迎回到溫馨像素家居！你可以用搖桿／方向鍵走近發光家具按 A，或在 iPad 直接輕觸發光任務點互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
     );
   }
 
@@ -78,9 +79,6 @@ export class ExploreScene extends Phaser.Scene {
     this.colliders.add(z);
   }
 
-  /**
-   * 載入 V4 2x-EPX 無損去背獨立家具貼圖，若缺漏則自動回退至無損圖集 frame
-   */
   private addStandaloneHomeProp(
     key: HomeStandalonePropKey,
     x: number,
@@ -122,10 +120,12 @@ export class ExploreScene extends Phaser.Scene {
     else this.buildHdStreetScene(this.worldW, this.worldH);
 
     const spawn = mapId === 'home' ? { x: hx(855), y: hy(555) } : { x: 630, y: 535 };
-    const heroScale = mapId === 'home' ? 0.92 : 1.05;
+    const heroScale = V5_HD_CHARS_ENABLED
+      ? (mapId === 'home' ? 0.58 : 0.66)
+      : (mapId === 'home' ? 0.94 : 1.08);
     const compScale = mapId === 'home' ? 0.88 : 1.0;
 
-    this.companion = this.add.sprite(spawn.x - 40, spawn.y + 6, 'npcs', 16)
+    this.companion = this.add.sprite(spawn.x - 42, spawn.y + 6, 'npcs', 16)
       .setScale(compScale)
       .setDepth(spawn.y);
     this.companion.play('companion-float');
@@ -134,37 +134,47 @@ export class ExploreScene extends Phaser.Scene {
     this.hero.setCollideWorldBounds(true);
     this.hero.play('hero-idle-down');
     const body = this.hero.body as Phaser.Physics.Arcade.Body;
-    body.setSize(28, 20);
-    body.setOffset(18, 60);
+    if (V5_HD_CHARS_ENABLED) {
+      body.setSize(46, 32);
+      body.setOffset(33, 108);
+    } else {
+      body.setSize(28, 20);
+      body.setOffset(18, 60);
+    }
 
     this.physics.add.collider(this.hero, this.colliders);
     this.cameras.main.startFollow(this.hero, true, 0.14, 0.14);
 
+    // 全面放大並清晰化互動提示橫幅中文字體
     this.promptTag = this.add.text(0, 0, '', {
-      fontSize: '15px', fontStyle: 'bold', color: '#0f172a',
-      backgroundColor: '#fde047', padding: { x: 10, y: 5 }
+      fontSize: '19px',
+      fontStyle: 'bold',
+      color: '#0f172a',
+      backgroundColor: '#fde047',
+      padding: { x: 14, y: 7 }
     }).setOrigin(0.5, 1).setDepth(5000).setVisible(false);
 
     this.refreshHud();
   }
 
-  // ==========================================================================
-  // 1. V4 緊湊版 EPX-2x 高清溫馨家居場景 (1268 x 920 1:1 銳利像素置中於 1280 x 920)
-  //    搭配獨立無損 LXP1 去背家具貼圖，橫向全屋一覽無遺、動線緊湊輕快
-  // ==========================================================================
   private buildCompactHdHomeScene(): void {
     this.add.rectangle(0, 0, this.worldW, this.worldH, 0x0b1120).setOrigin(0, 0).setDepth(-10);
     const bg = this.add.image(COMPACT_HOME_PAD_X, 0, 'map-home').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(1268, 920);
 
-    // 阻擋露台左右外側深色背景邊界，完整保留室內與陽光露台行走動線
     this.addFootCollider(hx(260), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
     this.addFootCollider(hx(1640), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
 
     const roomBadge = (x1902: number, y1380: number, txt: string) => {
       this.add.text(hx(x1902), hy(y1380), txt, {
-        fontSize: '14px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.76)', padding: { x: 8, y: 3 }, fontStyle: 'bold'
-      }).setOrigin(0.5).setDepth(30);
+        fontSize: '18px',
+        color: '#fef08a',
+        backgroundColor: 'rgba(15,23,42,0.88)',
+        padding: { x: 11, y: 5 },
+        fontStyle: 'bold',
+        stroke: '#020617',
+        strokeThickness: 3
+      }).setOrigin(0.5).setDepth(35);
     };
     roomBadge(220, 235, '🚪 玄關走廊');
     roomBadge(650, 88, '🍳 廚房與飯廳');
@@ -175,73 +185,87 @@ export class ExploreScene extends Phaser.Scene {
     roomBadge(1610, 555, '💻 小明睡房');
     roomBadge(960, 1045, '🌿 陽光露台');
 
-    // --- 左上玄關大門：前往香港社區街道 ---
     const frontDoor = this.addStandaloneHomeProp('door', hx(210), hy(105), 1.0, false, -5);
-    const doorEmote = this.add.sprite(hx(210), hy(44), 'npcs', 29).setScale(0.9).setDepth(4200);
+    const doorEmote = this.add.sprite(hx(210), hy(44), 'npcs', 29).setScale(0.95).setDepth(4200);
     this.tweens.add({ targets: doorEmote, y: doorEmote.y - 6, duration: 650, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
-      id: 'go_street', x: hx(210), y: hy(165), radius: 92,
+      id: 'go_street', x: hx(210), y: hy(165), radius: 94,
       label: '🚪 按 A 或輕觸大門前往「香港社區街道」',
       sprite: frontDoor, emote: doorEmote
     });
 
-    // --- 中上飯廳餐桌與餐椅：任務 4 蓋好食物防鼠保衛戰 ---
     this.addStandaloneHomeProp('chair_side', hx(535), hy(218), 0.94, false);
     this.addStandaloneHomeProp('chair_side', hx(745), hy(218), 0.94, false).setFlipX(true);
     const foodDone = gameState.isDone('cover_food');
     const cakeTable = this.addStandaloneHomeProp(foodDone ? 'dining_table' : 'cake_table', hx(640), hy(215), 1.0, false);
     if (foodDone) {
-      this.add.image(hx(640), hy(192), 'mg', 13).setScale(0.85).setDepth(cakeTable.depth + 5);
+      this.add.image(hx(640), hy(192), 'mg', 13).setScale(0.88).setDepth(cakeTable.depth + 5);
     }
-    this.registerTaskHotspot('cover_food', hx(640), hy(235), '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable, 92);
+    this.registerTaskHotspot('cover_food', hx(640), hy(235), '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable, 94);
 
-    // --- 中右上方洗手間洗手盆與鏡子：任務 1 洗手泡泡滅菌戰 ---
     this.addStandaloneHomeProp('mirror', hx(1010), hy(172), 0.96, false, -20);
     const sinkSpr = this.addStandaloneHomeProp('sink_vanity', hx(1010), hy(245), 0.98, false);
-    this.registerTaskHotspot('wash_hands', hx(1010), hy(265), '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr, 92);
+    this.registerTaskHotspot('wash_hands', hx(1010), hy(265), '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr, 94);
 
-    // --- 中下藍色磁磚浴室梳洗台、鏡子與毛巾：任務 2 護齒刷牙大掃除 ---
     this.addStandaloneHomeProp('mirror', hx(1268), hy(702), 0.96, false, -20);
     this.addStandaloneHomeProp('towel', hx(1340), hy(735), 0.98, false);
     const toothVanity = this.addStandaloneHomeProp('sink_vanity', hx(1268), hy(775), 0.98, false);
-    this.registerTaskHotspot('brush_teeth', hx(1268), hy(795), '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity, 92);
+    this.registerTaskHotspot('brush_teeth', hx(1268), hy(795), '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity, 94);
 
-    // --- 右下小明睡房書桌與座椅：任務 3 精準剪甲節奏王 ---
     const deskSpr = this.addStandaloneHomeProp('computer_desk', hx(1475), hy(915), 1.0, false);
     this.addStandaloneHomeProp('chair_front', hx(1475), hy(952), 0.9, false, 6);
-    this.registerTaskHotspot('trim_nails', hx(1475), hy(928), '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr, 92);
+    this.registerTaskHotspot('trim_nails', hx(1475), hy(928), '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr, 94);
 
-    // --- 正下陽光露台盆栽組與護欄：任務 5 倒積水滅孑孓挑戰 ---
     this.addStandaloneHomeProp('plant_large', hx(815), hy(1185), 0.95, false);
     this.addStandaloneHomeProp('plant_small', hx(1105), hy(1202), 0.98, false);
     this.addStandaloneHomeProp('balcony_railing', hx(835), hy(1292), 1.0, false, 20);
     this.addStandaloneHomeProp('balcony_railing', hx(1085), hy(1292), 1.0, false, 20);
     const potSpr = this.addStandaloneHomeProp('plant_whitepot', hx(960), hy(1195), 1.15, false);
-    this.registerTaskHotspot('clear_saucer', hx(960), hy(1210), '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr, 95);
+    this.registerTaskHotspot('clear_saucer', hx(960), hy(1210), '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr, 96);
 
-    // --- 中央走廊與睡房：媽媽與妹妹互動 NPC ---
-    const mom = this.add.sprite(hx(640), hy(560), 'npcs', 4).setScale(0.92).setDepth(hy(580)).play('npc-mom-walk');
-    this.tweens.add({ targets: mom, x: hx(810), duration: 3200, yoyo: true, repeat: -1 });
+    // 媽媽與妹妹 NPC（支援第 3 階段上傳之高清角色圖集自動切換與轉向動畫）
+    const useHdMom = V5_HD_CHARS_ENABLED && this.textures.exists('char-mom');
+    const mom = useHdMom
+      ? this.add.sprite(hx(640), hy(560), 'char-mom', 8).setScale(0.58).setDepth(hy(580)).play('hd-mom-right')
+      : this.add.sprite(hx(640), hy(560), 'npcs', 4).setScale(0.95).setDepth(hy(580)).play('npc-mom-walk');
+    this.tweens.add({
+      targets: mom,
+      x: hx(810),
+      duration: 3200,
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => { if (useHdMom) mom.play('hd-mom-left', true); },
+      onRepeat: () => { if (useHdMom) mom.play('hd-mom-right', true); }
+    });
     this.registerInteractiveHotspot({
-      id: 'talk_mom', x: hx(725), y: hy(560), radius: 96,
+      id: 'talk_mom', x: hx(725), y: hy(560), radius: 98,
       label: '👩 按 A 與媽媽對話查看衛生提示', sprite: mom
     });
 
-    const sis = this.add.sprite(hx(1430), hy(445), 'npcs', 12).setScale(0.92).setDepth(hy(465)).play('npc-girl-walk');
-    this.tweens.add({ targets: sis, x: hx(1590), duration: 2600, yoyo: true, repeat: -1 });
+    const useHdSis = V5_HD_CHARS_ENABLED && this.textures.exists('char-sister');
+    const sis = useHdSis
+      ? this.add.sprite(hx(1430), hy(445), 'char-sister', 8).setScale(0.56).setDepth(hy(465)).play('hd-sister-right')
+      : this.add.sprite(hx(1430), hy(445), 'npcs', 12).setScale(0.95).setDepth(hy(465)).play('npc-girl-walk');
+    this.tweens.add({
+      targets: sis,
+      x: hx(1590),
+      duration: 2600,
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => { if (useHdSis) sis.play('hd-sister-left', true); },
+      onRepeat: () => { if (useHdSis) sis.play('hd-sister-right', true); }
+    });
   }
 
-  // ==========================================================================
-  // 2. V4 EPX-2x 高清香港街道場景 + 12 件無損 LXP1 獨立街道前景物件 2.5D 景深疊加
-  // ==========================================================================
   private buildHdStreetScene(worldW: number, worldH: number): void {
     const bg = this.add.image(0, 0, 'map-street').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(worldW, worldH);
 
-    const streetScale = worldW / 1408; // 1.5x world alignment over 2816x1536 EPX-2x texture
+    const streetScale = worldW / 1408;
     const streetPropMap = new Map<string, Phaser.GameObjects.Image>();
 
     for (const spec of STREET_STANDALONE_PROP_SPECS) {
+      if (!V5_VALID_STREET_PROPS.includes(spec.key)) continue;
       const tk = `prop-street-${spec.key}`;
       if (!this.textures.exists(tk)) continue;
       const cx = (spec.x + spec.w * 0.5) * streetScale;
@@ -249,19 +273,21 @@ export class ExploreScene extends Phaser.Scene {
       const spr = this.add.image(cx, cy, tk);
       spr.setDisplaySize(spec.w * streetScale, spec.h * streetScale);
 
-      if (spec.layer === 'ground') {
-        spr.setDepth(16);
-      } else if (spec.layer === 'sign') {
-        spr.setDepth((spec.y + spec.h) * streetScale + 140);
-      } else {
-        spr.setDepth((spec.y + spec.h * 0.82) * streetScale);
-      }
+      if (spec.layer === 'ground') spr.setDepth(16);
+      else if (spec.layer === 'sign') spr.setDepth((spec.y + spec.h) * streetScale + 140);
+      else spr.setDepth((spec.y + spec.h * 0.82) * streetScale);
       streetPropMap.set(spec.key, spr);
     }
 
     const streetBadge = (x: number, y: number, txt: string) => {
       this.add.text(x, y, txt, {
-        fontSize: '15px', color: '#fef08a', backgroundColor: 'rgba(15,23,42,0.76)', padding: { x: 9, y: 4 }, fontStyle: 'bold'
+        fontSize: '19px',
+        color: '#fef08a',
+        backgroundColor: 'rgba(15,23,42,0.88)',
+        padding: { x: 12, y: 6 },
+        fontStyle: 'bold',
+        stroke: '#020617',
+        strokeThickness: 3
       }).setOrigin(0.5).setDepth(3500);
     };
     streetBadge(430, 240, '🌳 彩雲社區公園');
@@ -270,7 +296,6 @@ export class ExploreScene extends Phaser.Scene {
     streetBadge(1375, 650, '🍲 興發大排檔');
     streetBadge(1865, 495, '🏛️ 河道石拱橋');
 
-    // --- 中央行人天橋返回家居入口 (1050, 295) ---
     const homeEmote = this.add.sprite(1050, 232, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: homeEmote, y: homeEmote.y - 7, duration: 620, yoyo: true, repeat: -1 });
     const standaloneDoorKey = 'prop-home-door';
@@ -284,14 +309,24 @@ export class ExploreScene extends Phaser.Scene {
       label: '🏠 按 A 或輕觸天橋入口返回「溫馨家居」', sprite: gateDoor, emote: homeEmote
     });
 
-    // --- 街道行人路巡邏街坊 NPC ---
-    const man = this.add.sprite(760, 585, 'npcs', 8).setDepth(605).play('npc-man-walk');
-    this.tweens.add({ targets: man, x: 1320, duration: 4600, yoyo: true, repeat: -1 });
+    // 路人街坊 NPC（支援第 3 階段上傳之高清路人圖集自動切換）
+    const useHdMan = V5_HD_CHARS_ENABLED && this.textures.exists('char-passerby');
+    const man = useHdMan
+      ? this.add.sprite(760, 585, 'char-passerby', 8).setScale(0.65).setDepth(605).play('hd-passerby-right')
+      : this.add.sprite(760, 585, 'npcs', 8).setScale(1.05).setDepth(605).play('npc-man-walk');
+    this.tweens.add({
+      targets: man,
+      x: 1320,
+      duration: 4600,
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => { if (useHdMan) man.play('hd-passerby-left', true); },
+      onRepeat: () => { if (useHdMan) man.play('hd-passerby-right', true); }
+    });
 
-    // --- 左上彩雲社區公園 (441, 474)：任務 6 香港三色回收快手（直接使用無損獨立三色回收桶！）---
     const recDone = gameState.isDone('recycle_bottles');
     const recycleSpr = streetPropMap.get('recycle_bins');
-    const bottles = this.add.sprite(441, 514, 'tiles-street', recDone ? 19 : 21).setScale(1.2).setDepth(524);
+    const bottles = this.add.sprite(441, 514, 'tiles-street', recDone ? 19 : 21).setScale(1.25).setDepth(524);
     if (recycleSpr) {
       recycleSpr.setInteractive({ useHandCursor: true });
       recycleSpr.on('pointerdown', () => {
@@ -305,7 +340,6 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.registerTaskHotspot('recycle_bottles', 441, 505, '♻️ 按 A 或輕觸進入「香港三色回收快手」', bottles, 120);
 
-    // --- 右上「香港味道茶餐廳」外牆 (1440, 360)：任務 7 冷氣止漏與滅蚊 ---
     const mosDone = gameState.isDone('spray_mosquito');
     const acUnit = this.add.sprite(1440, 345, 'tiles-street', mosDone ? 10 : 9).setScale(1.3).setDepth(395);
     const puddle = this.add.sprite(1440, 465, 'tiles-street', mosDone ? 19 : 22).setScale(1.2).setDepth(460);
@@ -324,7 +358,6 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.registerTaskHotspot('spray_mosquito', 1440, 455, '🦟 按 A 或輕觸進入「冷氣止漏 ＋ DEET 驅蚊射擊」', acUnit, 120);
 
-    // --- 中下「興發大排檔」外牆 (1375, 765)：任務 8 封堵鼠洞 ---
     const ratDone = gameState.isDone('seal_rathole');
     const rHole = this.add.sprite(1375, 765, 'tiles-street', ratDone ? 15 : 14).setScale(1.3).setDepth(775);
     if (!ratDone) {
@@ -333,8 +366,7 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.registerTaskHotspot('seal_rathole', 1375, 780, '🕳️ 按 A 或輕觸進入「防鼠三部曲：封堵鼠洞」', rHole, 120);
 
-    // --- 右側河道石拱橋 (1835, 645)：任務 9 食環署主任常識總考核 ---
-    const fehd = this.add.sprite(1835, 645, 'npcs', 0).setScale(1.25).setDepth(665).play('npc-fehd-walk');
+    const fehd = this.add.sprite(1835, 645, 'npcs', 0).setScale(1.28).setDepth(665).play('npc-fehd-walk');
     const fEmote = this.add.sprite(fehd.x, fehd.y - 54, 'npcs', 29).setDepth(4200);
     this.tweens.add({ targets: fEmote, y: fEmote.y - 7, duration: 600, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
@@ -371,7 +403,7 @@ export class ExploreScene extends Phaser.Scene {
     this.tweens.add({ targets: ring, scale: { from: 0.92, to: 1.12 }, alpha: { from: 0.18, to: 0.38 }, duration: 850, yoyo: true, repeat: -1 });
 
     const emote = this.add.sprite(x, y - (isHome ? 46 : 58), 'npcs', done ? 30 : 28)
-      .setScale(isHome ? 0.88 : 1.0)
+      .setScale(isHome ? 0.92 : 1.0)
       .setDepth(4200);
     this.tweens.add({ targets: emote, y: emote.y - 6, duration: 580, yoyo: true, repeat: -1 });
 
@@ -561,8 +593,8 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.activeHotspot = nearest;
     if (nearest) {
-      const clampedX = Phaser.Math.Clamp(nearest.x, 195, this.worldW - 195);
-      const clampedY = Math.max(40, nearest.y - (gameState.currentMap === 'home' ? 68 : 82));
+      const clampedX = Phaser.Math.Clamp(nearest.x, 225, this.worldW - 225);
+      const clampedY = Math.max(46, nearest.y - (gameState.currentMap === 'home' ? 72 : 86));
       this.promptTag.setText(nearest.label).setPosition(clampedX, clampedY).setVisible(true);
     } else {
       this.promptTag.setVisible(false);

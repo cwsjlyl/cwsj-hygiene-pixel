@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { sanitizeSpriteTextureAlpha, syncHeroPortraitToDom } from '../gfx/CrispVisuals';
 import { HOME_STANDALONE_PROP_KEYS, STREET_STANDALONE_PROP_SPECS } from '../gfx/v4StandaloneAssetKeys';
+import {
+  V5_HD_CHARS_ENABLED,
+  V5_HOME_MAP_EXT,
+  V5_STREET_MAP_EXT,
+  V5_VALID_STREET_PROPS
+} from '../gfx/v5RuntimeConfig';
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -9,30 +15,40 @@ export class PreloadScene extends Phaser.Scene {
 
   preload(): void {
     const { width, height } = this.scale;
-    const bg = this.add.rectangle(width / 2, height / 2, 460, 26, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
-    const fill = this.add.rectangle(width / 2 - 224, height / 2, 4, 18, 0x10b981).setOrigin(0, 0.5);
-    const label = this.add.text(width / 2, height / 2 - 38, '載入 V4 超解析度高清地圖與 38 件獨立無損去背物件...', {
-      fontSize: '19px', color: '#fde047', fontStyle: 'bold'
+    const bg = this.add.rectangle(width / 2, height / 2, 500, 30, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
+    const fill = this.add.rectangle(width / 2 - 244, height / 2, 4, 20, 0x10b981).setOrigin(0, 0.5);
+    const label = this.add.text(width / 2, height / 2 - 42, '載入高清場景、去背物件與像素角色...', {
+      fontSize: '22px', color: '#fde047', fontStyle: 'bold', stroke: '#090d16', strokeThickness: 4
     }).setOrigin(0.5);
 
-    this.load.on('progress', (v: number) => { fill.width = 448 * v; });
+    this.load.on('progress', (v: number) => { fill.width = 488 * v; });
     this.load.on('loaderror', (file: { key?: string; url?: string }) => {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=6';
-    this.load.image('map-home', `./assets/maps/map-home.png${v}`);
-    this.load.image('map-street', `./assets/maps/map-street.png${v}`);
+    const v = '?v=7';
+    this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
+    this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
     this.load.atlas('home-props', `./assets/sprites/home-props-atlas.png${v}`, `./assets/sprites/home-props-atlas.json${v}`);
 
     HOME_STANDALONE_PROP_KEYS.forEach((key) => {
       this.load.image(`prop-home-${key}`, `./assets/sprites/props-home/${key}.png${v}`);
     });
     STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
-      this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
+      if (V5_VALID_STREET_PROPS.includes(spec.key)) {
+        this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
+      }
     });
 
-    this.load.spritesheet('hero', `./assets/sprites/char-cwsj-schoolboy.png${v}`, { frameWidth: 64, frameHeight: 84 });
+    if (V5_HD_CHARS_ENABLED) {
+      this.load.spritesheet('hero', `./assets/sprites/char-v5-hero.webp${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-mom', `./assets/sprites/char-v5-mom.webp${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-sister', `./assets/sprites/char-v5-sister.webp${v}`, { frameWidth: 112, frameHeight: 148 });
+      this.load.spritesheet('char-passerby', `./assets/sprites/char-v5-passerby.webp${v}`, { frameWidth: 112, frameHeight: 148 });
+    } else {
+      this.load.spritesheet('hero', `./assets/sprites/char-cwsj-schoolboy.png${v}`, { frameWidth: 64, frameHeight: 84 });
+    }
+
     this.load.spritesheet('npcs', `./assets/sprites/sprites-npcs-pests.png${v}`, { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('mg', `./assets/sprites/minigame-sprites.png${v}`, { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('tiles-street', `./assets/tilesets/tileset-hk-street.png${v}`, { frameWidth: 64, frameHeight: 64 });
@@ -42,29 +58,41 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     try {
-      // 1:1 EPX-2x Compact Home map uses NEAREST for razor-sharp pixel fidelity
       if (this.textures.exists('map-home')) {
         this.textures.get('map-home').setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
-      // 2x-EPX supersampled Street map & standalone props use LINEAR supersampling when scaled
       if (this.textures.exists('map-street')) {
-        this.textures.get('map-street').setFilter(Phaser.Textures.FilterMode.LINEAR);
+        // 原生 1408x768 WebP 用 NEAREST 呈現銳利像素；超採樣 PNG 用 LINEAR
+        this.textures.get('map-street').setFilter(
+          V5_STREET_MAP_EXT === 'webp'
+            ? Phaser.Textures.FilterMode.NEAREST
+            : Phaser.Textures.FilterMode.LINEAR
+        );
       }
 
-      ['hero', 'home-props', 'npcs', 'mg', 'tiles-street'].forEach((sk) => {
-        sanitizeSpriteTextureAlpha(this, sk);
+      sanitizeSpriteTextureAlpha(this, 'hero', Phaser.Textures.FilterMode.NEAREST, false);
+      sanitizeSpriteTextureAlpha(this, 'home-props', Phaser.Textures.FilterMode.NEAREST, true);
+      sanitizeSpriteTextureAlpha(this, 'npcs', Phaser.Textures.FilterMode.NEAREST, false);
+      sanitizeSpriteTextureAlpha(this, 'mg', Phaser.Textures.FilterMode.NEAREST, false);
+      sanitizeSpriteTextureAlpha(this, 'tiles-street', Phaser.Textures.FilterMode.NEAREST, false);
+
+      ['char-mom', 'char-sister', 'char-passerby'].forEach((ck) => {
+        if (this.textures.exists(ck)) {
+          this.textures.get(ck).setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
       });
 
       HOME_STANDALONE_PROP_KEYS.forEach((key) => {
         const tk = `prop-home-${key}`;
         if (this.textures.exists(tk)) {
-          this.textures.get(tk).setFilter(Phaser.Textures.FilterMode.LINEAR);
+          const isPlant = key === 'plant_large' || key === 'plant_whitepot' || key === 'plant_small' || key === 'green_rug';
+          sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, !isPlant);
         }
       });
       STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
         const tk = `prop-street-${spec.key}`;
         if (this.textures.exists(tk)) {
-          this.textures.get(tk).setFilter(Phaser.Textures.FilterMode.LINEAR);
+          sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, spec.key !== 'daipaidong_sign');
         }
       });
 
@@ -90,7 +118,7 @@ export class PreloadScene extends Phaser.Scene {
               { key: 'hero', frame: b + 3 },
               { key: 'hero', frame: b }
             ],
-            frameRate: 9,
+            frameRate: 8,
             repeat: -1
           });
         }
@@ -102,6 +130,34 @@ export class PreloadScene extends Phaser.Scene {
           frames: [{ key: 'hero', frame: 1 }, { key: 'hero', frame: 0 }, { key: 'hero', frame: 3 }, { key: 'hero', frame: 0 }],
           frameRate: 7,
           repeat: 1
+        });
+      }
+
+      // 若已掛載第 3 階段上傳之高清角色圖集，建立四向行走動畫
+      if (V5_HD_CHARS_ENABLED) {
+        [
+          { tex: 'char-mom', prefix: 'hd-mom' },
+          { tex: 'char-sister', prefix: 'hd-sister' },
+          { tex: 'char-passerby', prefix: 'hd-passerby' }
+        ].forEach(({ tex, prefix }) => {
+          if (!this.textures.exists(tex)) return;
+          dirs.forEach((dir, row) => {
+            const b = row * 4;
+            const k = `${prefix}-${dir}`;
+            if (!this.anims.exists(k)) {
+              this.anims.create({
+                key: k,
+                frames: [
+                  { key: tex, frame: b },
+                  { key: tex, frame: b + 1 },
+                  { key: tex, frame: b + 2 },
+                  { key: tex, frame: b + 3 }
+                ],
+                frameRate: 6,
+                repeat: -1
+              });
+            }
+          });
         });
       }
 
