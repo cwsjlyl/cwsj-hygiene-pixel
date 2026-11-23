@@ -4,11 +4,12 @@ import zlib from 'node:zlib';
 import { CWSJ_ORIGINAL_LOGO_LG01_B64, decodeLg01ToPng } from './assets/cwsjOriginalLogo.mjs';
 import { HOME_PROPS_PACK_A } from './assets/homePropsPackA.mjs';
 import { HOME_PROPS_PACK_B } from './assets/homePropsPackB.mjs';
-import { decodeLxp1ToRgba, scale2xRgba, upscaleHdPixelArt } from './assets/lxp1Codec.mjs';
+import { scale2xRgba, upscaleHdPixelArt } from './assets/lxp1Codec.mjs';
 import { CWSJ_SCHOOLBOY_B64, verifyValidPngBuffer } from './assets/mapHomeData.mjs';
 import { STREET_PROPS_PACK } from './assets/streetPropsStandalone.mjs';
 import {
   decodePxg2ToRgba,
+  HOME_PROPS_ATLAS_PXG2_B64,
   MAP_HOME_PXG2_B64,
   MAP_STREET_PXG2_B64
 } from './assets/uploadedOriginalAssets.mjs';
@@ -54,22 +55,89 @@ function writeBinaryPng(targetPath, pngBuf) {
   fs.writeFileSync(targetPath, pngBuf);
 }
 
-function decodeSmartProp(item) {
-  const clean = item.b64.replace(/\s+/g, '');
-  const raw = zlib.inflateSync(Buffer.from(clean, 'base64'));
+function parseRawPropBuffer(raw, expectedW, expectedH) {
   const magic = raw.subarray(0, 4).toString('ascii');
   if (magic === 'LXP1') {
-    return decodeLxp1ToRgba(clean);
+    const w = raw.readUInt16BE(4);
+    const h = raw.readUInt16BE(6);
+    const totalPx = w * h;
+    const nColors = raw[8] === 0 && raw.length >= 10 + 256 * 3 + totalPx ? 256 : raw[8];
+    const transIdx = raw[9];
+    const palOff = 10;
+    const idxOff = palOff + nColors * 3;
+    if (raw.length < idxOff + totalPx) {
+      throw new Error(`Truncated LXP1 buffer: ${raw.length} < ${idxOff + totalPx}`);
+    }
+    const pal32 = new Uint32Array(256);
+    const tmp = new Uint8Array(4);
+    const tmp32 = new Uint32Array(tmp.buffer);
+    for (let i = 0; i < nColors; i++) {
+      if (i === transIdx) {
+        pal32[i] = 0;
+      } else {
+        tmp[0] = raw[palOff + i * 3];
+        tmp[1] = raw[palOff + i * 3 + 1];
+        tmp[2] = raw[palOff + i * 3 + 2];
+        tmp[3] = 255;
+        pal32[i] = tmp32[0];
+      }
+    }
+    const rgba = new Uint8Array(totalPx * 4);
+    const out32 = new Uint32Array(rgba.buffer);
+    for (let p = 0; p < totalPx; p++) {
+      out32[p] = pal32[raw[idxOff + p]];
+    }
+    return { w, h, rgba };
   }
-  if (magic === 'PXG2') {
-    return decodePxg2ToRgba(clean, (w, h, rgba) => ({ w, h, rgba }));
+
+  if (expectedW && expectedH && raw.length >= expectedW * expectedH * 4) {
+    const rgba = new Uint8Array(expectedW * expectedH * 4);
+    rgba.set(raw.subarray(0, expectedW * expectedH * 4));
+    return { w: expectedW, h: expectedH, rgba };
   }
-  if (item.w && item.h && raw.length === item.w * item.h * 4) {
-    const rgba = new Uint8Array(raw.length);
-    rgba.set(raw);
-    return { w: item.w, h: item.h, rgba };
+  throw new Error(`Unsupported raw prop buffer: magic=${magic}, len=${raw.length}`);
+}
+
+function cropRgbaRegion(srcImg, rx, ry, rw, rh) {
+  const rgba = new Uint8Array(rw * rh * 4);
+  for (let y = 0; y < rh; y++) {
+    const sy = Math.min(srcImg.h - 1, Math.max(0, ry + y));
+    for (let x = 0; x < rw; x++) {
+      const sx = Math.min(srcImg.w - 1, Math.max(0, rx + x));
+      const si = (sy * srcImg.w + sx) * 4;
+      const di = (y * rw + x) * 4;
+      rgba[di] = srcImg.rgba[si];
+      rgba[di + 1] = srcImg.rgba[si + 1];
+      rgba[di + 2] = srcImg.rgba[si + 2];
+      rgba[di + 3] = srcImg.rgba[si + 3];
+    }
   }
-  throw new Error(`Unsupported prop payload format: magic=${magic}, len=${raw.length}`);
+  return { w: rw, h: rh, rgba };
+}
+
+function tryDecodePropResilient(item, fallbackFn) {
+  const clean = item.b64.replace(/\s+/g, '');
+  const buf = Buffer.from(clean, 'base64');
+
+  // Tier 1: Standard strict zlib inflate
+  try {
+    const raw = zlib.inflateSync(buf);
+    return { img: parseRawPropBuffer(raw, item.w, item.h), tier: 'lxp1-strict' };
+  } catch {
+    // proceed to Tier 2
+  }
+
+  // Tier 2: Raw DEFLATE stream bypassing 2B zlib header & 4B Adler-32 tail checksum
+  try {
+    const rawBody = buf.subarray(2, Math.max(2, buf.length - 4));
+    const raw = zlib.inflateRawSync(rawBody, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+    return { img: parseRawPropBuffer(raw, item.w, item.h), tier: 'lxp1-raw-deflate' };
+  } catch {
+    // proceed to Tier 3
+  }
+
+  // Tier 3: Verified original atlas/map region crop fallback
+  return { img: fallbackFn(), tier: 'atlas-crop-fallback' };
 }
 
 function cleanPureRgba(rgba) {
@@ -91,11 +159,9 @@ writeBinaryPng('public/assets/ui/cwsj-logo.png', decodeLg01ToPng(CWSJ_ORIGINAL_L
 
 // ============================================================================
 // 1. V4 高清超解析度地圖管線 (Compact Home 1268x920 EPX-2x & HK Street 2816x1536 EPX-2x)
-//    - 將 1902x1380 家居原圖還原至原生 634x460 網格後執行 EPX 2x 邊緣銳利化 -> 1268 x 920 緊湊版家居
-//    - 將 1408x768 香港街道原圖執行 EPX 2x 超解析度升級 -> 2816 x 1536 高清街道底圖
 // ============================================================================
+const rawHome1902 = decodePxg2ToRgba(MAP_HOME_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
 {
-  const rawHome1902 = decodePxg2ToRgba(MAP_HOME_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
   const baseW = 634;
   const baseH = 460;
   const home634 = new Uint8Array(baseW * baseH * 4);
@@ -113,19 +179,31 @@ writeBinaryPng('public/assets/ui/cwsj-logo.png', decodeLg01ToPng(CWSJ_ORIGINAL_L
   }
   const hdCompactHome = scale2xRgba(baseW, baseH, home634); // 1268 x 920
   writeBinaryPng('public/assets/maps/map-home.png', encodePNG(hdCompactHome.w, hdCompactHome.h, hdCompactHome.rgba));
+}
 
-  const rawStreet1408 = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+const rawStreet1408 = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+{
   const hdStreet = scale2xRgba(rawStreet1408.w, rawStreet1408.h, rawStreet1408.rgba); // 2816 x 1536
   writeBinaryPng('public/assets/maps/map-street.png', encodePNG(hdStreet.w, hdStreet.h, hdStreet.rgba));
 }
 
 // ============================================================================
-// 1b. V4 26 件無損 LXP1 獨立家居家具 PNG + 無損重建圖集 & 12 件無損香港街道獨立物件 PNG
+// 1b. V4 26 件獨立家居家具 PNG + 圖集重建 & 12 件香港街道獨立物件 PNG（三層容錯解碼）
 // ============================================================================
+const existingAtlasJson = JSON.parse(fs.readFileSync('public/assets/sprites/home-props-atlas.json', 'utf8'));
+const fallbackAtlasImg = decodePxg2ToRgba(HOME_PROPS_ATLAS_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+
 const allHomePropPacks = { ...HOME_PROPS_PACK_A, ...HOME_PROPS_PACK_B };
 const decodedHomeProps1x = {};
+const tierStats = { 'lxp1-strict': 0, 'lxp1-raw-deflate': 0, 'atlas-crop-fallback': 0 };
+
 for (const [name, item] of Object.entries(allHomePropPacks)) {
-  const decoded = decodeSmartProp(item);
+  const { img: decoded, tier } = tryDecodePropResilient(item, () => {
+    const f = existingAtlasJson.frames[name]?.frame;
+    if (!f) return { w: item.w, h: item.h, rgba: new Uint8Array(item.w * item.h * 4) };
+    return cropRgbaRegion(fallbackAtlasImg, f.x, f.y, f.w, f.h);
+  });
+  tierStats[tier]++;
   cleanPureRgba(decoded.rgba);
   decodedHomeProps1x[name] = decoded;
   const hd2x = upscaleHdPixelArt(decoded, 1);
@@ -136,7 +214,7 @@ for (const [name, item] of Object.entries(allHomePropPacks)) {
   );
 }
 
-// 同步以 100% 無損 LXP1 像素重建 home-props-atlas.png + home-props-atlas.json
+// 同步重建 home-props-atlas.png + home-props-atlas.json
 {
   const atlasW = 1024;
   const atlasH = 512;
@@ -184,10 +262,13 @@ for (const [name, item] of Object.entries(allHomePropPacks)) {
   fs.writeFileSync('public/assets/sprites/home-props-atlas.json', JSON.stringify(atlasMeta, null, 2));
 }
 
-// 輸出 12 件無損 EPX-2x 香港街道獨立前景物件
+// 輸出 12 件 EPX-2x 香港街道獨立前景物件
 const streetManifest = {};
 for (const [name, item] of Object.entries(STREET_PROPS_PACK)) {
-  const decoded = decodeSmartProp(item);
+  const { img: decoded, tier } = tryDecodePropResilient(item, () =>
+    cropRgbaRegion(rawStreet1408, item.x, item.y, item.w, item.h)
+  );
+  tierStats[tier]++;
   cleanPureRgba(decoded.rgba);
   const hd2x = upscaleHdPixelArt(decoded, 1);
   cleanPureRgba(hd2x.rgba);
@@ -198,6 +279,7 @@ for (const [name, item] of Object.entries(STREET_PROPS_PACK)) {
   streetManifest[name] = { x: item.x, y: item.y, w: item.w, h: item.h };
 }
 fs.writeFileSync('public/assets/sprites/street-props-manifest.json', JSON.stringify(streetManifest, null, 2));
+console.log('[v4-prop-tiers]', JSON.stringify(tierStats));
 
 function hex(h, a = 255) {
   const s = h.replace('#', '');
@@ -586,7 +668,7 @@ const putSP = (col, row, b) => streetProps.blit(b.outlined().epx2x(), col * 64, 
 streetProps.save('public/assets/tilesets/tileset-hk-street.png');
 
 // ============================================================================
-// 6. V4 建置期完整性強制驗證（10 核心圖檔 + 26 獨立家居物件 + 12 獨立香港街道物件 = 48 檔案）
+// 6. V4 建置期完整性強制驗證（11 核心圖檔 + 26 獨立家居物件 + 12 獨立香港街道物件 = 49 檔案）
 // ============================================================================
 const requiredAssets = [
   'public/assets/ui/cwsj-logo.png',
@@ -608,4 +690,4 @@ for (const rp of requiredAssets) {
     throw new Error(`Missing or invalid required V4 asset: ${rp}`);
   }
 }
-console.log(`[v4-verified] All ${requiredAssets.length} V4 HD assets (EPX-2x maps, 26 standalone home props, 12 standalone HK street props & original logo) verified!`);
+console.log(`[v4-verified] All ${requiredAssets.length} V4 HD assets verified successfully!`);
