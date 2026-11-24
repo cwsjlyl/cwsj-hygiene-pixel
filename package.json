@@ -5,7 +5,7 @@
   "description": "CWSJ Primary School Personal & Environmental Hygiene 2D Pixel RPG",
   "type": "module",
   "scripts": {
-    "assets": "node scripts/generate-pixel-assets.mjs && node scripts/rawUploadsPipeline.mjs && node scripts/v7StreetAndCollisionPatch.mjs",
+    "assets": "node scripts/rawUploadsPipeline.mjs && node scripts/generate-pixel-assets.mjs && node scripts/v8IpadCrispPipeline.mjs",
     "dev": "npm run assets && vite",
     "build": "npm run assets && tsc && vite build",
     "preview": "vite preview"
