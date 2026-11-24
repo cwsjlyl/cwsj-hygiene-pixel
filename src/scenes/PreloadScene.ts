@@ -7,7 +7,9 @@ import {
   V5_HOME_MAP_EXT,
   V5_STREET_MAP_EXT,
   V5_STREET_NATIVE_1X,
-  V5_VALID_STREET_PROPS
+  V5_VALID_STREET_PROPS,
+  V6_HOME_PROPS_EXT,
+  V6_LIGHT_MG_NPCS
 } from '../gfx/v5RuntimeConfig';
 
 export class PreloadScene extends Phaser.Scene {
@@ -19,7 +21,7 @@ export class PreloadScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const bg = this.add.rectangle(width / 2, height / 2, 500, 30, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
     const fill = this.add.rectangle(width / 2 - 244, height / 2, 4, 20, 0x10b981).setOrigin(0, 0.5);
-    const label = this.add.text(width / 2, height / 2 - 42, '載入 iPad 輕量場景與四向角色圖集...', {
+    const label = this.add.text(width / 2, height / 2 - 42, '載入 iPad 輕量家居擺設與關卡圖集...', {
       fontSize: '22px', color: '#fde047', fontStyle: 'bold', stroke: '#090d16', strokeThickness: 4
     }).setOrigin(0.5);
 
@@ -28,14 +30,21 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=10';
+    const v = '?v=11';
     this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
     this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
-    this.load.atlas('home-props', `./assets/sprites/home-props-atlas.png${v}`, `./assets/sprites/home-props-atlas.json${v}`);
+    this.load.atlas(
+      'home-props',
+      `./assets/sprites/home-props-atlas.${V6_HOME_PROPS_EXT}${v}`,
+      `./assets/sprites/home-props-atlas.json${v}`
+    );
 
-    HOME_STANDALONE_PROP_KEYS.forEach((key) => {
-      this.load.image(`prop-home-${key}`, `./assets/sprites/props-home/${key}.png${v}`);
-    });
+    if (V6_HOME_PROPS_EXT !== 'webp') {
+      HOME_STANDALONE_PROP_KEYS.forEach((key) => {
+        this.load.image(`prop-home-${key}`, `./assets/sprites/props-home/${key}.png${v}`);
+      });
+    }
+
     STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
       if (V5_VALID_STREET_PROPS.includes(spec.key)) {
         this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
@@ -51,8 +60,9 @@ export class PreloadScene extends Phaser.Scene {
       this.load.spritesheet('hero', `./assets/sprites/char-cwsj-schoolboy.png${v}`, { frameWidth: 64, frameHeight: 84 });
     }
 
-    this.load.spritesheet('npcs', `./assets/sprites/sprites-npcs-pests.png${v}`, { frameWidth: 64, frameHeight: 64 });
-    this.load.spritesheet('mg', `./assets/sprites/minigame-sprites.png${v}`, { frameWidth: 64, frameHeight: 64 });
+    const mgNpcFrame = V6_LIGHT_MG_NPCS ? 32 : 64;
+    this.load.spritesheet('npcs', `./assets/sprites/sprites-npcs-pests.png${v}`, { frameWidth: mgNpcFrame, frameHeight: mgNpcFrame });
+    this.load.spritesheet('mg', `./assets/sprites/minigame-sprites.png${v}`, { frameWidth: mgNpcFrame, frameHeight: mgNpcFrame });
     this.load.spritesheet('tiles-street', `./assets/tilesets/tileset-hk-street.png${v}`, { frameWidth: 64, frameHeight: 64 });
 
     this.load.on('complete', () => { bg.destroy(); fill.destroy(); label.destroy(); });
@@ -72,7 +82,7 @@ export class PreloadScene extends Phaser.Scene {
       }
 
       sanitizeSpriteTextureAlpha(this, 'hero', Phaser.Textures.FilterMode.NEAREST, false);
-      sanitizeSpriteTextureAlpha(this, 'home-props', Phaser.Textures.FilterMode.NEAREST, true);
+      sanitizeSpriteTextureAlpha(this, 'home-props', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'npcs', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'mg', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'tiles-street', Phaser.Textures.FilterMode.NEAREST, false);
@@ -83,13 +93,16 @@ export class PreloadScene extends Phaser.Scene {
         }
       });
 
-      HOME_STANDALONE_PROP_KEYS.forEach((key) => {
-        const tk = `prop-home-${key}`;
-        if (this.textures.exists(tk)) {
-          const isPlant = key === 'plant_large' || key === 'plant_whitepot' || key === 'plant_small' || key === 'green_rug';
-          sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, !isPlant);
-        }
-      });
+      if (V6_HOME_PROPS_EXT !== 'webp') {
+        HOME_STANDALONE_PROP_KEYS.forEach((key) => {
+          const tk = `prop-home-${key}`;
+          if (this.textures.exists(tk)) {
+            const isPlant = key === 'plant_large' || key === 'plant_whitepot' || key === 'plant_small' || key === 'green_rug';
+            sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, !isPlant);
+          }
+        });
+      }
+
       STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
         const tk = `prop-street-${spec.key}`;
         if (this.textures.exists(tk)) {
