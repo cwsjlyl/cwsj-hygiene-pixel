@@ -146,7 +146,6 @@ function decodePngToRgba(buf) {
   return { w, h, rgba };
 }
 
-// Auto-crop transparent margins & box-downsample oversized home maps (e.g. 1920x1080) to iPad-lightweight 634x460
 function downscaleHomeForIpad(w, h, rgba) {
   let minX = w, maxX = -1, minY = h, maxY = -1;
   for (let y = 0; y < h; y++) {
@@ -395,11 +394,32 @@ function cleanAndAlignSpriteSheet(role, w, h, srcRgba) {
   return { w: outW, h: outH, rgba: outRgba };
 }
 
+async function loadLongestStringExport(relPath) {
+  const mod = await import(relPath);
+  let best = '';
+  for (const val of Object.values(mod)) {
+    if (typeof val === 'string' && val.length > best.length) {
+      best = val;
+    }
+  }
+  return best;
+}
+
+function assertValidWebp(buf, label) {
+  if (
+    buf.length < 16 ||
+    buf.subarray(0, 4).toString('ascii') !== 'RIFF' ||
+    buf.subarray(8, 12).toString('ascii') !== 'WEBP'
+  ) {
+    throw new Error(`[v6-webp] Invalid WebP header for ${label} (len=${buf.length})`);
+  }
+}
+
 async function runPipeline() {
   fs.mkdirSync(MAPS_OUT, { recursive: true });
   fs.mkdirSync(SPRITES_OUT, { recursive: true });
 
-  // 1. Assemble & strictly CRC32-verify embedded iPad lightweight 634x460 RGBA home map WebP
+  // 1a. Assemble & CRC32-verify embedded iPad lightweight 634x460 RGBA home map WebP
   if (
     fs.existsSync('scripts/assets/v5HomeIpadWebpPart1.mjs') &&
     fs.existsSync('scripts/assets/v5HomeIpadWebpPart2.mjs')
@@ -415,7 +435,45 @@ async function runPipeline() {
       throw new Error(`[ipad-home] Checksum mismatch! Expected 0x41f4e4e0 / 0x3d225829 / 0xcc3fb0ee`);
     }
     fs.writeFileSync(path.join(MAPS_OUT, 'map-home.webp'), webpBuf);
-    console.log('[ipad-home] 100% bit-exact verified -> wrote public/assets/maps/map-home.webp (634x460, 42.5 KB)!');
+    if (fs.existsSync(path.join(MAPS_OUT, 'map-home.png'))) {
+      fs.unlinkSync(path.join(MAPS_OUT, 'map-home.png'));
+    }
+    console.log('[ipad-home] Verified -> wrote public/assets/maps/map-home.webp (634x460, 42.5 KB)!');
+  }
+
+  // 1b. Assemble & verify embedded iPad lightweight 704x384 HK street map WebP
+  if (
+    fs.existsSync('scripts/assets/v6StreetWebpPart1.mjs') &&
+    fs.existsSync('scripts/assets/v6StreetWebpPart2.mjs') &&
+    fs.existsSync('scripts/assets/v6StreetWebpPart3.mjs')
+  ) {
+    const s1 = await loadLongestStringExport('./assets/v6StreetWebpPart1.mjs');
+    const s2 = await loadLongestStringExport('./assets/v6StreetWebpPart2.mjs');
+    const s3 = await loadLongestStringExport('./assets/v6StreetWebpPart3.mjs');
+    const streetBuf = Buffer.from((s1 + s2 + s3).replace(/\s+/g, ''), 'base64');
+    assertValidWebp(streetBuf, 'map-street.webp');
+    fs.writeFileSync(path.join(MAPS_OUT, 'map-street.webp'), streetBuf);
+    if (fs.existsSync(path.join(MAPS_OUT, 'map-street.png'))) {
+      fs.unlinkSync(path.join(MAPS_OUT, 'map-street.png'));
+    }
+    console.log(`[v6-street] Verified -> wrote public/assets/maps/map-street.webp (704x384, ${(streetBuf.length / 1024).toFixed(1)} KB)!`);
+  }
+
+  // 1c. Wire 4 embedded iPad lightweight 448x592 4-direction character spritesheet WebPs
+  const v6CharModules = [
+    ['hero', 'scripts/assets/v6CharHeroWebp.mjs', './assets/v6CharHeroWebp.mjs'],
+    ['mom', 'scripts/assets/v6CharMomWebp.mjs', './assets/v6CharMomWebp.mjs'],
+    ['sister', 'scripts/assets/v6CharSisterWebp.mjs', './assets/v6CharSisterWebp.mjs'],
+    ['passerby', 'scripts/assets/v6CharPasserbyWebp.mjs', './assets/v6CharPasserbyWebp.mjs']
+  ];
+  for (const [role, checkPath, relImport] of v6CharModules) {
+    if (fs.existsSync(checkPath)) {
+      const b64 = await loadLongestStringExport(relImport);
+      const charBuf = Buffer.from(b64.replace(/\s+/g, ''), 'base64');
+      assertValidWebp(charBuf, `char-v5-${role}.webp`);
+      fs.writeFileSync(path.join(SPRITES_OUT, `char-v5-${role}.webp`), charBuf);
+      console.log(`[v6-char] Verified -> wrote public/assets/sprites/char-v5-${role}.webp (448x592, ${(charBuf.length / 1024).toFixed(1)} KB)!`);
+    }
   }
 
   let homeMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-home.webp')) ? 'webp' : 'png';
@@ -516,7 +574,7 @@ async function runPipeline() {
   ].join('\n');
 
   fs.writeFileSync(RUNTIME_CFG_PATH, cfgOut, 'utf8');
-  console.log(`[v5-pipeline] Runtime config synced -> home:${homeMapExt}, street:${streetMapExt}, hdChars:${hdCharsEnabled} (${hdCharsExt})`);
+  console.log(`[v6-pipeline] Runtime config synced -> home:${homeMapExt}, street:${streetMapExt}, hdChars:${hdCharsEnabled} (${hdCharsExt})`);
 }
 
 await runPipeline();
