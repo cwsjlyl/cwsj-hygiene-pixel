@@ -17,6 +17,15 @@ interface MapHotspot {
   emote?: Phaser.GameObjects.Sprite;
 }
 
+interface TapWalkTarget {
+  x: number;
+  y: number;
+  pendingHotspot: MapHotspot | null;
+  stuckMs: number;
+  lastX: number;
+  lastY: number;
+}
+
 const COMPACT_HOME_PAD_X = 6;
 const COMPACT_HOME_RATIO = 2 / 3;
 
@@ -43,6 +52,10 @@ export class ExploreScene extends Phaser.Scene {
   private worldW = 1280;
   private worldH = 920;
 
+  private tapTarget: TapWalkTarget | null = null;
+  private tapMarker: Phaser.GameObjects.Arc | null = null;
+  private lastHotspotTapAt = 0;
+
   private joystick!: VirtualJoystick;
   private dialogueOpen = false;
   private onDialogueNext: (() => void) | null = null;
@@ -54,6 +67,10 @@ export class ExploreScene extends Phaser.Scene {
   create(): void {
     this.input.addPointer(3);
     this.joystick = new VirtualJoystick(() => this.handleActionButton());
+
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.handleMapTap(pointer);
+    });
 
     document.getElementById('rpg-dialogue')!.addEventListener('pointerdown', () => {
       if (this.dialogueOpen) this.closeDialogue();
@@ -69,8 +86,101 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到溫馨像素家居！你可以用搖桿／方向鍵走近發光家具按 A，或在 iPad 直接輕觸發光任務點互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
+      `${gameState.studentName}，歡迎回到溫馨像素家居！你可以直接輕觸地圖任意地點讓角色走過去，亦可用搖桿／方向鍵移動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
     );
+  }
+
+  private clearTapTarget(): void {
+    this.tapTarget = null;
+    if (this.tapMarker) {
+      this.tapMarker.destroy();
+      this.tapMarker = null;
+    }
+  }
+
+  private setTapDestination(wx: number, wy: number, pendingHotspot: MapHotspot | null = null): void {
+    const padX = gameState.currentMap === 'home' ? 40 : 52;
+    const padY = gameState.currentMap === 'home' ? 40 : 56;
+    const tx = Phaser.Math.Clamp(wx, padX, this.worldW - padX);
+    const ty = Phaser.Math.Clamp(wy, padY, this.worldH - padY);
+
+    if (this.tapMarker) {
+      this.tapMarker.destroy();
+      this.tapMarker = null;
+    }
+
+    const ringColor = pendingHotspot ? 0xfacc15 : 0x38bdf8;
+    const marker = this.add.circle(tx, ty, 18, ringColor, 0.22)
+      .setStrokeStyle(3, ringColor, 0.95)
+      .setDepth(45);
+    this.tweens.add({
+      targets: marker,
+      scale: { from: 0.78, to: 1.18 },
+      alpha: { from: 0.9, to: 0.3 },
+      duration: 520,
+      yoyo: true,
+      repeat: -1
+    });
+    this.tapMarker = marker;
+    this.tapTarget = {
+      x: tx,
+      y: ty,
+      pendingHotspot,
+      stuckMs: 0,
+      lastX: this.hero ? this.hero.x : tx,
+      lastY: this.hero ? this.hero.y : ty
+    };
+  }
+
+  private walkToOrTriggerHotspot(h: MapHotspot): void {
+    if (this.dialogueOpen || this.cheering || !this.hero) return;
+    this.lastHotspotTapAt = this.time.now;
+    const dist = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, h.x, h.y);
+    if (dist <= h.radius) {
+      this.clearTapTarget();
+      this.activeHotspot = h;
+      this.handleActionButton();
+    } else {
+      this.setTapDestination(h.x, h.y, h);
+    }
+  }
+
+  private handleMapTap(pointer: Phaser.Input.Pointer): void {
+    if (this.dialogueOpen || this.cheering || !this.hero) return;
+    if (this.time.now - this.lastHotspotTapAt < 65) return;
+
+    const titleOv = document.getElementById('title-overlay');
+    const certOv = document.getElementById('cert-overlay');
+    if ((titleOv && !titleOv.classList.contains('hidden')) || (certOv && !certOv.classList.contains('hidden'))) {
+      return;
+    }
+
+    const rawEvt = pointer.event as Event | undefined;
+    const targetEl = rawEvt?.target as HTMLElement | null | undefined;
+    if (targetEl && targetEl.tagName && targetEl.tagName.toUpperCase() !== 'CANVAS') {
+      return;
+    }
+
+    pointer.updateWorldPoint(this.cameras.main);
+    const wx = pointer.worldX;
+    const wy = pointer.worldY;
+
+    let tappedHotspot: MapHotspot | null = null;
+    let bestDist = 56;
+    for (const h of this.hotspots) {
+      if (gameState.isDone(h.id)) continue;
+      const d = Phaser.Math.Distance.Between(wx, wy, h.x, h.y);
+      if (d <= bestDist) {
+        bestDist = d;
+        tappedHotspot = h;
+      }
+    }
+
+    if (tappedHotspot) {
+      this.walkToOrTriggerHotspot(tappedHotspot);
+    } else {
+      this.setTapDestination(wx, wy, null);
+    }
   }
 
   private addFootCollider(cx: number, cy: number, w: number, h: number): void {
@@ -103,6 +213,8 @@ export class ExploreScene extends Phaser.Scene {
   private buildWorld(mapId: MapId): void {
     gameState.currentMap = mapId;
     sound.playBgm(mapId);
+    this.tapTarget = null;
+    this.tapMarker = null;
     this.children.removeAll(true);
     this.hotspots = [];
     this.trail = [];
@@ -145,7 +257,6 @@ export class ExploreScene extends Phaser.Scene {
     this.physics.add.collider(this.hero, this.colliders);
     this.cameras.main.startFollow(this.hero, true, 0.14, 0.14);
 
-    // 全面放大並清晰化互動提示橫幅中文字體
     this.promptTag = this.add.text(0, 0, '', {
       fontSize: '19px',
       fontStyle: 'bold',
@@ -223,7 +334,6 @@ export class ExploreScene extends Phaser.Scene {
     const potSpr = this.addStandaloneHomeProp('plant_whitepot', hx(960), hy(1195), 1.15, false);
     this.registerTaskHotspot('clear_saucer', hx(960), hy(1210), '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr, 96);
 
-    // 媽媽與妹妹 NPC（支援第 3 階段上傳之高清角色圖集自動切換與轉向動畫）
     const useHdMom = V5_HD_CHARS_ENABLED && this.textures.exists('char-mom');
     const mom = useHdMom
       ? this.add.sprite(hx(640), hy(560), 'char-mom', 8).setScale(0.58).setDepth(hy(580)).play('hd-mom-right')
@@ -239,7 +349,7 @@ export class ExploreScene extends Phaser.Scene {
     });
     this.registerInteractiveHotspot({
       id: 'talk_mom', x: hx(725), y: hy(560), radius: 98,
-      label: '👩 按 A 與媽媽對話查看衛生提示', sprite: mom
+      label: '👩 按 A 或輕觸與媽媽對話查看衛生提示', sprite: mom
     });
 
     const useHdSis = V5_HD_CHARS_ENABLED && this.textures.exists('char-sister');
@@ -309,7 +419,6 @@ export class ExploreScene extends Phaser.Scene {
       label: '🏠 按 A 或輕觸天橋入口返回「溫馨家居」', sprite: gateDoor, emote: homeEmote
     });
 
-    // 路人街坊 NPC（支援第 3 階段上傳之高清路人圖集自動切換）
     const useHdMan = V5_HD_CHARS_ENABLED && this.textures.exists('char-passerby');
     const man = useHdMan
       ? this.add.sprite(760, 585, 'char-passerby', 8).setScale(0.65).setDepth(605).play('hd-passerby-right')
@@ -330,11 +439,9 @@ export class ExploreScene extends Phaser.Scene {
     if (recycleSpr) {
       recycleSpr.setInteractive({ useHandCursor: true });
       recycleSpr.on('pointerdown', () => {
-        if (this.dialogueOpen) return;
         const found = this.hotspots.find((item) => item.id === 'recycle_bottles');
         if (found) {
-          this.activeHotspot = found;
-          this.handleActionButton();
+          this.walkToOrTriggerHotspot(found);
         }
       });
     }
@@ -379,9 +486,7 @@ export class ExploreScene extends Phaser.Scene {
     if (h.sprite) {
       h.sprite.setInteractive({ useHandCursor: true });
       h.sprite.on('pointerdown', () => {
-        if (this.dialogueOpen) return;
-        this.activeHotspot = h;
-        this.handleActionButton();
+        this.walkToOrTriggerHotspot(h);
       });
     }
     this.hotspots.push(h);
@@ -411,6 +516,7 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   private launchArcadeMinigame(taskId: string, onWon: (medal: MedalRank, bonus: number) => void): void {
+    this.clearTapTarget();
     document.getElementById('touch-controls')?.classList.add('hidden');
     this.scene.pause();
     this.scene.launch('MinigameScene', {
@@ -437,7 +543,7 @@ export class ExploreScene extends Phaser.Scene {
     if (h.id === 'talk_mom') {
       const rem = 5 - gameState.completedCount('home');
       this.openDialogue('媽媽', rem > 0
-        ? `屋企仲有 ${rem} 項衛生任務未做完呀！記得去齊【中上飯廳】、【上下洗手間／浴室】、【右下小明睡房】同【正下陽光露台】看看！`
+        ? `屋企仲有 ${rem} 項衛生任務未做完呀！你可以直接點選地圖或發光家具走去【中上飯廳】、【上下洗手間／浴室】、【右下小明睡房】同【正下陽光露台】看看！`
         : '全屋都乾乾淨淨！快啲由左上【玄關大門】去香港社區街道幫食環署主任啦！');
       return;
     }
@@ -448,7 +554,7 @@ export class ExploreScene extends Phaser.Scene {
       } else {
         sound.pop();
         this.buildWorld('street');
-        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！請幫忙到左上公園做三色回收、到「香港味道茶餐廳」修好滴水冷氣與滅蚊、封好「興發大排檔」外牆鼠洞，最後到右側河道石拱橋找我考核！');
+        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！你可以直接點選地面走向目標，幫忙到左上公園做三色回收、到「香港味道茶餐廳」修好滴水冷氣與滅蚊、封好「興發大排檔」外牆鼠洞，最後到右側河道石拱橋找我考核！');
       }
       return;
     }
@@ -480,6 +586,7 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   private openDialogue(speaker: string, text: string, onNext?: () => void): void {
+    this.clearTapTarget();
     this.dialogueOpen = true;
     this.onDialogueNext = onNext ?? null;
     document.getElementById('dialogue-speaker')!.textContent = speaker;
@@ -548,13 +655,67 @@ export class ExploreScene extends Phaser.Scene {
       return;
     }
 
-    const mv = this.joystick.getMovementVector();
-    const baseSpeed = gameState.currentMap === 'home' ? 195 : 225;
-    const speed = mv.sprint ? baseSpeed * 1.48 : baseSpeed;
-    this.hero.setVelocity(mv.x * speed, mv.y * speed);
+    const joyMv = this.joystick.getMovementVector();
+    let moveX = joyMv.x;
+    let moveY = joyMv.y;
+    let isSprint = joyMv.sprint;
+    let speedMult = 1.0;
 
-    if (Math.hypot(mv.x, mv.y) > 0.08) {
-      this.facing = Math.abs(mv.x) > Math.abs(mv.y) ? (mv.x < 0 ? 'left' : 'right') : (mv.y < 0 ? 'up' : 'down');
+    if (Math.hypot(joyMv.x, joyMv.y) > 0.08) {
+      if (this.tapTarget) this.clearTapTarget();
+    } else if (this.tapTarget) {
+      const dx = this.tapTarget.x - this.hero.x;
+      const dy = this.tapTarget.y - this.hero.y;
+      const dist = Math.hypot(dx, dy);
+      const pending = this.tapTarget.pendingHotspot;
+      const arriveDist = pending ? Math.max(44, pending.radius * 0.72) : 14;
+
+      if (dist <= arriveDist) {
+        this.clearTapTarget();
+        this.hero.setVelocity(0, 0);
+        if (pending && !gameState.isDone(pending.id)) {
+          this.activeHotspot = pending;
+          this.handleActionButton();
+          return;
+        }
+      } else {
+        let ux = dx / dist;
+        let uy = dy / dist;
+        const body = this.hero.body as Phaser.Physics.Arcade.Body;
+        if ((body.blocked.left || body.blocked.right) && Math.abs(dy) > 12) {
+          ux = 0;
+          uy = Math.sign(dy);
+        } else if ((body.blocked.up || body.blocked.down) && Math.abs(dx) > 12) {
+          uy = 0;
+          ux = Math.sign(dx);
+        }
+
+        const moved = Math.hypot(this.hero.x - this.tapTarget.lastX, this.hero.y - this.tapTarget.lastY);
+        this.tapTarget.lastX = this.hero.x;
+        this.tapTarget.lastY = this.hero.y;
+        if (moved < 0.35 * Math.max(0.5, delta / 16.67)) {
+          this.tapTarget.stuckMs += delta;
+        } else {
+          this.tapTarget.stuckMs = 0;
+        }
+
+        if (this.tapTarget.stuckMs > 550) {
+          this.clearTapTarget();
+        } else {
+          moveX = ux;
+          moveY = uy;
+          speedMult = 1.15;
+          isSprint = false;
+        }
+      }
+    }
+
+    const baseSpeed = gameState.currentMap === 'home' ? 195 : 225;
+    const speed = isSprint ? baseSpeed * 1.48 : baseSpeed * speedMult;
+    this.hero.setVelocity(moveX * speed, moveY * speed);
+
+    if (Math.hypot(moveX, moveY) > 0.08) {
+      this.facing = Math.abs(moveX) > Math.abs(moveY) ? (moveX < 0 ? 'left' : 'right') : (moveY < 0 ? 'up' : 'down');
       this.hero.play(`hero-walk-${this.facing}`, true);
 
       this.trail.push({ x: this.hero.x, y: this.hero.y });
@@ -564,12 +725,12 @@ export class ExploreScene extends Phaser.Scene {
       }
 
       this.stepTimer += delta;
-      if (this.stepTimer > (mv.sprint ? 195 : 285)) {
+      if (this.stepTimer > (isSprint ? 195 : 285)) {
         this.stepTimer = 0;
         sound.step();
       }
 
-      if (mv.sprint) {
+      if (isSprint) {
         this.dustTimer += delta;
         if (this.dustTimer > 95) {
           this.dustTimer = 0;
