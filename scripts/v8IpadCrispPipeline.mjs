@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { decodePxg2ToRgba, MAP_STREET_PXG2_B64 } from './assets/uploadedOriginalAssets.mjs';
 import {
   STREET_CLEAN_WEBP_B64,
   STREET_CLEAN_WEBP_BYTES,
@@ -182,10 +183,6 @@ function epx2x(src, w, h) {
   return { w: dw, h: dh, data: dst };
 }
 
-/**
- * Renders a 4-direction x 4-frame (448x592, 112x148 per frame) NDS-style pixel-art character sheet.
- * Row 0: down, Row 1: left, Row 2: right, Row 3: up
- */
 function buildCrisp4DirCharacterPng(spec) {
   const fw = 28;
   const fh = 37;
@@ -201,12 +198,10 @@ function buildCrisp4DirCharacterPng(spec) {
       const bob = (col === 0 || col === 2) ? -1 : 0;
       const stepPhase = col === 0 ? -1 : col === 2 ? 1 : 0;
 
-      // 1. Character body (drawn before outline pass)
       const headY = 6 + bob;
       const torsoY = 17 + bob;
       const legY = 27 + bob;
 
-      // Back hair / bun (for Mom / Sister)
       if (spec.hasBun) {
         if (dir === 'up') c.ellipse(14, headY - 2, 4.2, 3.2, spec.hairDark);
         else if (dir === 'left') c.ellipse(19, headY + 1, 3.2, 3.2, spec.hairDark);
@@ -214,7 +209,6 @@ function buildCrisp4DirCharacterPng(spec) {
         else c.ellipse(14, headY - 2, 3.6, 2.4, spec.hairDark);
       }
 
-      // Legs & Shoes
       if (dir === 'down' || dir === 'up') {
         const lOff = stepPhase === -1 ? -1 : stepPhase === 1 ? 1 : 0;
         const rOff = -lOff;
@@ -230,7 +224,6 @@ function buildCrisp4DirCharacterPng(spec) {
         c.rect(12 + stride + (dir === 'right' ? 1 : -1), legY + 5, 4, 2, spec.shoeColor);
       }
 
-      // Torso / Dress / Shirt
       if (spec.hasSkirt) {
         c.rect(9, torsoY, 10, 6, spec.topColor);
         c.rect(9, torsoY + 4, 10, 2, spec.topShadow);
@@ -255,7 +248,6 @@ function buildCrisp4DirCharacterPng(spec) {
         }
       }
 
-      // Arms (with natural swing)
       const armSwing = stepPhase * 2;
       if (dir === 'down' || dir === 'up') {
         c.rect(7, torsoY + 1 + armSwing, 2, 6, spec.topColor);
@@ -268,18 +260,15 @@ function buildCrisp4DirCharacterPng(spec) {
         c.rect(armX, torsoY + 6, 3, 2, spec.skinColor);
       }
 
-      // Neck & Head
       c.rect(12, headY + 10, 4, 2, spec.skinShadow);
       c.ellipse(14, headY + 5, 6.2, 5.8, spec.skinColor);
       c.rect(9, headY + 8, 10, 2, spec.skinColor);
 
-      // Hair & Facial Features by direction
       if (dir === 'down') {
         c.ellipse(14, headY + 2, 6.6, 4.0, spec.hairColor);
         c.rect(8, headY + 2, 2, 5, spec.hairColor);
         c.rect(18, headY + 2, 2, 5, spec.hairColor);
         c.rect(11, headY + 1, 5, 2, spec.hairLight);
-        // Eyes, blush & gentle smile
         c.rect(10, headY + 5, 2, 2, '#1e1b4b');
         c.rect(16, headY + 5, 2, 2, '#1e1b4b');
         c.pset(10, headY + 5, [255, 255, 255, 255]);
@@ -311,10 +300,8 @@ function buildCrisp4DirCharacterPng(spec) {
         c.pset(17, headY + 8, hexToRgba('#be123c'));
       }
 
-      // Crisp pixel-art dark outline
       c.addDarkOutline('#1a1528');
 
-      // Soft ground shadow underneath feet
       for (let sy = 33; sy <= 35; sy++) {
         for (let sx = 8; sx <= 19; sx++) {
           const nx = (sx - 13.5) / 6.0;
@@ -331,7 +318,6 @@ function buildCrisp4DirCharacterPng(spec) {
         }
       }
 
-      // Smooth 4x pixel-art upscale (28x37 -> 56x74 -> 112x148) via two EPX passes
       const pass1 = epx2x(c.data, fw, fh);
       const pass2 = epx2x(pass1.data, pass1.w, pass1.h);
 
@@ -348,22 +334,23 @@ function buildCrisp4DirCharacterPng(spec) {
   return encodeRgbaPng(sheetW, sheetH, sheet);
 }
 
-// 1. Clean up redundant PNGs while keeping FULL HD 1408x768 map-street.png & 1024x512 home-props-atlas.png
+// 1. Write exact native 1408x768 HD map-street.png (4.1 MB VRAM instead of 17 MB 2816x1536!) & verify HD home-props-atlas.png
 function cleanMapsAndHomeProps() {
-  // Keep map-home.webp (42.5 KB verified), remove redundant map-home.png
   const homePng = path.join(MAPS_OUT, 'map-home.png');
   const homeWebp = path.join(MAPS_OUT, 'map-home.webp');
   if (fs.existsSync(homeWebp) && fs.existsSync(homePng)) {
     fs.unlinkSync(homePng);
   }
 
-  // Keep FULL HD 1408x768 map-street.png from generate-pixel-assets.mjs, remove broken map-street.webp
   const streetWebp = path.join(MAPS_OUT, 'map-street.webp');
   if (fs.existsSync(streetWebp)) fs.unlinkSync(streetWebp);
-  const streetBytes = verifyPngFile(path.join(MAPS_OUT, 'map-street.png'), 1408, 768);
-  console.log(`[v8-street-hd] Verified FULL HD map-street.png (1408x768, ${(streetBytes / 1024).toFixed(1)} KB)`);
 
-  // Keep FULL HD 1024x512 home-props-atlas.png + json from generate-pixel-assets.mjs, remove blurry 256x118 webp & loose props-home dir
+  const rawStreet = decodePxg2ToRgba(MAP_STREET_PXG2_B64, (w, h, rgba) => ({ w, h, rgba }));
+  const streetOut = path.join(MAPS_OUT, 'map-street.png');
+  fs.writeFileSync(streetOut, encodeRgbaPng(rawStreet.w, rawStreet.h, rawStreet.rgba));
+  const streetBytes = verifyPngFile(streetOut, 1408, 768);
+  console.log(`[v8-street-hd] Verified native 1408x768 HD map-street.png (${(streetBytes / 1024).toFixed(1)} KB)`);
+
   const homePropsWebp = path.join(SPRITES_OUT, 'home-props-atlas.webp');
   if (fs.existsSync(homePropsWebp)) fs.unlinkSync(homePropsWebp);
   const propsHomeDir = path.join(SPRITES_OUT, 'props-home');
@@ -371,11 +358,13 @@ function cleanMapsAndHomeProps() {
   const propsStreetDir = path.join(SPRITES_OUT, 'props-street');
   if (fs.existsSync(propsStreetDir)) fs.rmSync(propsStreetDir, { recursive: true, force: true });
 
-  const hpBytes = verifyPngFile(path.join(SPRITES_OUT, 'home-props-atlas.png'), 1024, 512);
-  console.log(`[v8-home-props-hd] Verified FULL HD home-props-atlas.png (1024x512, ${(hpBytes / 1024).toFixed(1)} KB)`);
+  const atlasMeta = JSON.parse(fs.readFileSync(path.join(SPRITES_OUT, 'home-props-atlas.json'), 'utf8'));
+  const expW = atlasMeta?.meta?.size?.w || 1024;
+  const expH = atlasMeta?.meta?.size?.h || 470;
+  const hpBytes = verifyPngFile(path.join(SPRITES_OUT, 'home-props-atlas.png'), expW, expH);
+  console.log(`[v8-home-props-hd] Verified HD home-props-atlas.png (${expW}x${expH}, ${(hpBytes / 1024).toFixed(1)} KB)`);
 }
 
-// 2. Build full-color 448x592 PNG spritesheets for Mom & Passerby (fixes black silhouettes 100%)
 function buildFullColorCharacterSheets() {
   const momPng = buildCrisp4DirCharacterPng({
     hairColor: '#6b3e26',
@@ -431,7 +420,6 @@ function buildFullColorCharacterSheets() {
   );
 }
 
-// 3. Build CRC32-verified 256x256 pure-transparent street-props-atlas.webp + JSON
 function buildVerifiedStreetPropsAtlas() {
   const webpBuf = Buffer.from(STREET_CLEAN_WEBP_B64, 'base64');
   const actualCrc = crc32(webpBuf);
