@@ -68,6 +68,69 @@ function encodeRgbaPng(w, h, rgba) {
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
+function encodeIndexedOrRgbaPng(w, h, rgba) {
+  const palette = [[0, 0, 0, 0]];
+  const colorMap = new Map([['0,0,0,0', 0]]);
+  const indices = new Uint8Array(w * h);
+
+  for (let i = 0; i < w * h; i++) {
+    const off = i * 4;
+    const a = rgba[off + 3];
+    if (a < 20) {
+      indices[i] = 0;
+      continue;
+    }
+    const r = rgba[off], g = rgba[off + 1], b = rgba[off + 2];
+    const key = `${r},${g},${b},${a}`;
+    let idx = colorMap.get(key);
+    if (idx === undefined) {
+      if (palette.length >= 256) {
+        return encodeRgbaPng(w, h, rgba);
+      }
+      idx = palette.length;
+      palette.push([r, g, b, a]);
+      colorMap.set(key, idx);
+    }
+    indices[i] = idx;
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 3; // Indexed-color PNG8
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const plte = Buffer.alloc(palette.length * 3);
+  const trns = Buffer.alloc(palette.length);
+  for (let i = 0; i < palette.length; i++) {
+    plte[i * 3] = palette[i][0];
+    plte[i * 3 + 1] = palette[i][1];
+    plte[i * 3 + 2] = palette[i][2];
+    trns[i] = palette[i][3];
+  }
+
+  const raw = Buffer.alloc((w + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const rowOff = y * (w + 1);
+    raw[rowOff] = 0;
+    Buffer.from(indices.buffer, y * w, w).copy(raw, rowOff + 1);
+  }
+
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const idat = zlib.deflateSync(raw, { level: 9 });
+  return Buffer.concat([
+    sig,
+    pngChunk('IHDR', ihdr),
+    pngChunk('PLTE', plte),
+    pngChunk('tRNS', trns),
+    pngChunk('IDAT', idat),
+    pngChunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
 function paeth(a, b, c) {
   const p = a + b - c;
   const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
@@ -144,6 +207,66 @@ function decodePngToRgba(buf) {
     }
   }
   return { w, h, rgba };
+}
+
+/**
+ * 將 512x512 (僅上半 512x256 含 32 格 64x64 EPX-2x 圖元) 精準無損逆轉還原為
+ * 256x128 (32x32 原生銳利像素) 並壓縮為 8-bit PNG8，減省 87.5% iPad VRAM 與 >80% 體積
+ */
+function compressSheetToIpadLightweight(pngPath, label) {
+  if (!fs.existsSync(pngPath)) return false;
+  const origBuf = fs.readFileSync(pngPath);
+  const { w, h, rgba } = decodePngToRgba(origBuf);
+  if (w !== 512 || h < 256) return false;
+
+  const outW = 256;
+  const outH = 128;
+  const outRgba = new Uint8Array(outW * outH * 4);
+
+  for (let dy = 0; dy < outH; dy++) {
+    for (let dx = 0; dx < outW; dx++) {
+      const coords = [
+        [dx * 2, dy * 2],
+        [dx * 2 + 1, dy * 2],
+        [dx * 2, dy * 2 + 1],
+        [dx * 2 + 1, dy * 2 + 1]
+      ];
+      // 以 2x2 區塊眾數 (Mode) 精準逆轉 Scale2x/EPX，100% 保留 1px 黑邊與細節
+      let bestKey = '';
+      let bestCnt = 0;
+      let bestPx = [0, 0, 0, 0];
+      const counts = new Map();
+      for (const [sx, sy] of coords) {
+        const si = (sy * w + sx) * 4;
+        const a = rgba[si + 3] < 24 ? 0 : rgba[si + 3];
+        const r = a === 0 ? 0 : rgba[si];
+        const g = a === 0 ? 0 : rgba[si + 1];
+        const b = a === 0 ? 0 : rgba[si + 2];
+        const k = `${r},${g},${b},${a}`;
+        const nextCnt = (counts.get(k) || 0) + 1;
+        counts.set(k, nextCnt);
+        if (nextCnt > bestCnt) {
+          bestCnt = nextCnt;
+          bestKey = k;
+          bestPx = [r, g, b, a];
+        }
+      }
+      if (bestKey) {
+        const di = (dy * outW + dx) * 4;
+        outRgba[di] = bestPx[0];
+        outRgba[di + 1] = bestPx[1];
+        outRgba[di + 2] = bestPx[2];
+        outRgba[di + 3] = bestPx[3];
+      }
+    }
+  }
+
+  const compressed = encodeIndexedOrRgbaPng(outW, outH, outRgba);
+  fs.writeFileSync(pngPath, compressed);
+  console.log(
+    `[v6-lightweight] Compressed ${label}: ${w}x${h} (${(origBuf.length / 1024).toFixed(1)} KB) -> ${outW}x${outH} PNG8 (${(compressed.length / 1024).toFixed(1)} KB, -87.5% VRAM)`
+  );
+  return true;
 }
 
 function downscaleHomeForIpad(w, h, rgba) {
@@ -476,6 +599,60 @@ async function runPipeline() {
     }
   }
 
+  // 1d. Wire iPad lightweight 256x118 Home Props Atlas WebP (8.1 KB) & purge 26 redundant PNGs
+  let homePropsExt = 'png';
+  let homePropsScale = 1;
+  if (fs.existsSync('scripts/assets/v6HomePropsWebp.mjs')) {
+    const { IPAD_HOME_PROPS_WEBP, HOME_PROPS_V6_ATLAS_JSON } = await import('./assets/v6HomePropsWebp.mjs');
+    const propsBuf = Buffer.from(IPAD_HOME_PROPS_WEBP.replace(/\s+/g, ''), 'base64');
+    assertValidWebp(propsBuf, 'home-props-atlas.webp');
+    fs.writeFileSync(path.join(SPRITES_OUT, 'home-props-atlas.webp'), propsBuf);
+
+    const frames = {};
+    for (const [key, r] of Object.entries(HOME_PROPS_V6_ATLAS_JSON)) {
+      frames[key] = {
+        frame: { x: r.x, y: r.y, w: r.w, h: r.h },
+        rotated: false,
+        trimmed: false,
+        spriteSourceSize: { x: 0, y: 0, w: r.w, h: r.h },
+        sourceSize: { w: r.w, h: r.h }
+      };
+    }
+    fs.writeFileSync(
+      path.join(SPRITES_OUT, 'home-props-atlas.json'),
+      JSON.stringify(
+        {
+          frames,
+          meta: {
+            app: 'cwsj-hygiene-pixel-v6-ipad',
+            version: '6.0',
+            image: 'home-props-atlas.webp',
+            format: 'RGBA8888',
+            size: { w: 256, h: 118 },
+            scale: '0.25'
+          }
+        },
+        null,
+        2
+      )
+    );
+
+    if (fs.existsSync(path.join(SPRITES_OUT, 'home-props-atlas.png'))) {
+      fs.unlinkSync(path.join(SPRITES_OUT, 'home-props-atlas.png'));
+    }
+    if (fs.existsSync(path.join(SPRITES_OUT, 'props-home'))) {
+      fs.rmSync(path.join(SPRITES_OUT, 'props-home'), { recursive: true, force: true });
+    }
+    homePropsExt = 'webp';
+    homePropsScale = 4;
+    console.log(`[v6-home-props] Verified -> wrote home-props-atlas.webp (${(propsBuf.length / 1024).toFixed(1)} KB, 26 frames) & removed 26 redundant PNGs!`);
+  }
+
+  // 1e. Compress Quest Minigame & NPC/Pest spritesheets into 256x128 8-bit PNG8 (-87.5% VRAM)
+  const mgLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'minigame-sprites.png'), 'minigame-sprites.png');
+  const npcLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'sprites-npcs-pests.png'), 'sprites-npcs-pests.png');
+  const lightMgNpcs = mgLight && npcLight;
+
   let homeMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-home.webp')) ? 'webp' : 'png';
   let streetMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-street.webp')) ? 'webp' : 'png';
   let streetNative1x = streetMapExt === 'webp';
@@ -506,18 +683,15 @@ async function runPipeline() {
         if (/home|house|room|家居|室內/.test(lower)) {
           fs.copyFileSync(full, path.join(MAPS_OUT, 'map-home.webp'));
           homeMapExt = 'webp';
-          console.log(`[raw-uploads] Copied WebP home map: ${file}`);
         } else if (/street|街道/.test(lower)) {
           fs.copyFileSync(full, path.join(MAPS_OUT, 'map-street.webp'));
           streetMapExt = 'webp';
           streetNative1x = true;
-          console.log(`[raw-uploads] Copied WebP street map: ${file}`);
         } else {
           for (const r of ['hero', 'mom', 'sister', 'passerby']) {
             if (lower.includes(r)) {
               fs.copyFileSync(full, path.join(SPRITES_OUT, `char-v5-${r}.webp`));
               charFound[r] = 'webp';
-              console.log(`[raw-uploads] Copied WebP character (${r}): ${file}`);
             }
           }
         }
@@ -533,10 +707,8 @@ async function runPipeline() {
         if (w > 950) {
           const scaled = downscaleHomeForIpad(w, h, rgba);
           fs.writeFileSync(path.join(MAPS_OUT, 'map-home.png'), encodeRgbaPng(scaled.w, scaled.h, scaled.rgba));
-          console.log(`[raw-uploads] Auto-cropped & downscaled oversized home map (${w}x${h} -> 634x460 iPad-lightweight): ${file}`);
         } else {
           fs.copyFileSync(full, path.join(MAPS_OUT, 'map-home.png'));
-          console.log(`[raw-uploads] Installed native PNG home map (${w}x${h}): ${file}`);
         }
         if (fs.existsSync(path.join(MAPS_OUT, 'map-home.webp'))) fs.unlinkSync(path.join(MAPS_OUT, 'map-home.webp'));
         homeMapExt = 'png';
@@ -544,7 +716,6 @@ async function runPipeline() {
         fs.copyFileSync(full, path.join(MAPS_OUT, 'map-street.png'));
         streetMapExt = 'png';
         streetNative1x = w <= 1600;
-        console.log(`[raw-uploads] Installed native PNG street map (${w}x${h}): ${file}`);
       } else if (h > w * 1.1) {
         const role = classifyCharRole(file, w, h, rgba, usedRoles);
         usedRoles.add(role);
@@ -552,7 +723,6 @@ async function runPipeline() {
         const outPng = encodeRgbaPng(cleaned.w, cleaned.h, cleaned.rgba);
         fs.writeFileSync(path.join(SPRITES_OUT, `char-v5-${role}.png`), outPng);
         charFound[role] = 'png';
-        console.log(`[raw-uploads] Cleaned checkerboard & aligned 4-dir spritesheet -> char-v5-${role}.png (${cleaned.w}x${cleaned.h}) from ${file}`);
       }
     }
   }
@@ -569,12 +739,17 @@ async function runPipeline() {
     `export const V5_STREET_NATIVE_1X: boolean = ${streetNative1x};`,
     `export const V5_HD_CHARS_ENABLED: boolean = ${hdCharsEnabled};`,
     `export const V5_HD_CHARS_EXT: 'png' | 'webp' = '${hdCharsExt}';`,
+    `export const V6_HOME_PROPS_EXT: 'png' | 'webp' = '${homePropsExt}';`,
+    `export const V6_HOME_PROPS_SCALE: number = ${homePropsScale};`,
+    `export const V6_LIGHT_MG_NPCS: boolean = ${lightMgNpcs};`,
     `export const V5_VALID_STREET_PROPS: readonly string[] = ${JSON.stringify(validStreetProps)};`,
     ''
   ].join('\n');
 
   fs.writeFileSync(RUNTIME_CFG_PATH, cfgOut, 'utf8');
-  console.log(`[v6-pipeline] Runtime config synced -> home:${homeMapExt}, street:${streetMapExt}, hdChars:${hdCharsEnabled} (${hdCharsExt})`);
+  console.log(
+    `[v6-pipeline] Synced -> home:${homeMapExt}, street:${streetMapExt}, homeProps:${homePropsExt}(x${homePropsScale}), lightMgNpcs:${lightMgNpcs}, hdChars:${hdCharsEnabled}`
+  );
 }
 
 await runPipeline();

@@ -1,33 +1,39 @@
 import Phaser from 'phaser';
 import { sound } from '../audio/RetroSound';
-import { gameState, MedalRank } from '../state/gameState';
+import { V6_HOME_PROPS_SCALE, V6_LIGHT_MG_NPCS } from '../gfx/v5RuntimeConfig';
+import { MedalRank } from '../state/gameState';
 
-export interface MinigameLaunchData {
+interface MinigameInitData {
   taskId: string;
-  onComplete: (medal: MedalRank, bonus: number) => void;
+  onComplete: (medal: MedalRank, bonusScore: number) => void;
   onCancel: () => void;
 }
 
+const MG_MULT = V6_LIGHT_MG_NPCS ? 2 : 1;
+
 export class MinigameScene extends Phaser.Scene {
   private taskId = '';
-  private onComplete!: (medal: MedalRank, bonus: number) => void;
-  private onCancel!: () => void;
-  private combo = 0;
+  private onCompleteCb!: (medal: MedalRank, bonusScore: number) => void;
+  private onCancelCb!: () => void;
+
   private mistakes = 0;
+  private combo = 0;
+  private maxCombo = 0;
   private finished = false;
-  private statusText!: Phaser.GameObjects.Text;
   private progFill!: Phaser.GameObjects.Rectangle;
+  private statusText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('MinigameScene');
   }
 
-  init(data: MinigameLaunchData): void {
+  init(data: MinigameInitData): void {
     this.taskId = data.taskId;
-    this.onComplete = data.onComplete;
-    this.onCancel = data.onCancel;
-    this.combo = 0;
+    this.onCompleteCb = data.onComplete;
+    this.onCancelCb = data.onCancel;
     this.mistakes = 0;
+    this.combo = 0;
+    this.maxCombo = 0;
     this.finished = false;
   }
 
@@ -50,7 +56,7 @@ export class MinigameScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     exitBtn.on('pointerdown', () => {
       sound.pop();
-      this.exitScene(false);
+      this.exitScene(false, 'none', 0);
     });
 
     switch (this.taskId) {
@@ -66,6 +72,22 @@ export class MinigameScene extends Phaser.Scene {
     }
   }
 
+  private homeProp(x: number, y: number, key: string, scale: number): Phaser.GameObjects.Image {
+    return this.add.image(x, y, 'home-props', key).setScale(scale * V6_HOME_PROPS_SCALE);
+  }
+
+  private mgImg(x: number, y: number, frame: number, scale: number): Phaser.GameObjects.Image {
+    return this.add.image(x, y, 'mg', frame).setScale(scale * MG_MULT);
+  }
+
+  private mgSpr(x: number, y: number, frame: number, scale: number): Phaser.GameObjects.Sprite {
+    return this.add.sprite(x, y, 'mg', frame).setScale(scale * MG_MULT);
+  }
+
+  private npcSpr(x: number, y: number, frame: number, scale: number): Phaser.GameObjects.Sprite {
+    return this.add.sprite(x, y, 'npcs', frame).setScale(scale * MG_MULT);
+  }
+
   private setHeader(title: string, tip: string): void {
     this.add.text(132, 140, title, {
       fontSize: '26px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 4
@@ -76,22 +98,23 @@ export class MinigameScene extends Phaser.Scene {
   }
 
   private updateProgress(ratio: number): void {
-    this.progFill.width = Math.max(4, Math.min(1, ratio) * 616);
+    const r = Phaser.Math.Clamp(ratio, 0, 1);
+    this.progFill.width = Math.max(4, 614 * r);
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
     this.statusText.setText(`連擊 x${this.combo}`);
   }
 
-  private burst(x: number, y: number, color = 0x38bdf8, count = 10): void {
+  private burst(x: number, y: number, color = 0x38bdf8, count = 8): void {
     for (let i = 0; i < count; i++) {
-      const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-      const spd = 35 + Math.random() * 45;
+      const ang = (Math.PI * 2 * i) / count;
       const p = this.add.rectangle(x, y, 8, 8, color);
       this.tweens.add({
         targets: p,
-        x: x + Math.cos(ang) * spd,
-        y: y + Math.sin(ang) * spd,
+        x: x + Math.cos(ang) * 44,
+        y: y + Math.sin(ang) * 44,
         alpha: 0,
         scale: 0.3,
-        duration: 380,
+        duration: 340,
         onComplete: () => p.destroy()
       });
     }
@@ -107,7 +130,8 @@ export class MinigameScene extends Phaser.Scene {
   private winGame(): void {
     if (this.finished) return;
     this.finished = true;
-    sound.success();
+    sound.win();
+
     const medal: MedalRank = this.mistakes === 0 ? 'gold' : this.mistakes <= 2 ? 'silver' : 'bronze';
     const bonus = medal === 'gold' ? 80 : medal === 'silver' ? 40 : 15;
     const medalLabel = medal === 'gold' ? '🥇 金牌通關' : medal === 'silver' ? '🥈 銀牌通關' : '🥉 銅牌通關';
@@ -120,30 +144,30 @@ export class MinigameScene extends Phaser.Scene {
     this.time.delayedCall(1100, () => this.exitScene(true, medal, bonus));
   }
 
-  private exitScene(won: boolean, medal: MedalRank = 'gold', bonus = 0): void {
+  private exitScene(won: boolean, medal: MedalRank, bonus: number): void {
     document.getElementById('touch-controls')?.classList.remove('hidden');
-    sound.playBgm(gameState.currentMap);
     this.scene.stop();
     this.scene.resume('ExploreScene');
-    if (won) this.onComplete(medal, bonus);
-    else this.onCancel();
+    if (won) this.onCompleteCb(medal, bonus);
+    else this.onCancelCb();
   }
 
   private setupWashHands(): void {
     this.setHeader('🧼 洗手泡泡滅菌戰', '輕觸或滑過游走的「像素病毒與細菌」，發射番梘泡泡將雙手徹底洗淨（消滅 12 隻）！');
     this.add.rectangle(640, 442, 920, 355, 0x0c4a6e).setStrokeStyle(3, 0x38bdf8);
-    this.add.image(255, 525, 'home-props', 'sink_vanity').setScale(1.15).setAlpha(0.85);
+    this.homeProp(255, 525, 'sink_vanity', 1.15).setAlpha(0.85);
 
-    this.add.image(560, 450, 'mg', 0).setScale(2.3).setAlpha(0.95);
-    this.add.image(720, 450, 'mg', 0).setScale(2.3).setFlipX(true).setAlpha(0.95);
-    const soap = this.add.image(640, 575, 'mg', 1).setScale(1.6);
+    this.mgImg(560, 450, 0, 2.3).setAlpha(0.95);
+    this.mgImg(720, 450, 0, 2.3).setFlipX(true).setAlpha(0.95);
+    const soap = this.mgImg(640, 575, 1, 1.5);
 
     let cleared = 0;
     const total = 12;
+
     const spawnGerm = () => {
       if (this.finished) return;
       const frame = Math.random() < 0.5 ? 3 : 4;
-      const g = this.add.sprite(260 + Math.random() * 760, 295 + Math.random() * 245, 'mg', frame).setScale(1.25).setInteractive({ useHandCursor: true });
+      const g = this.mgSpr(260 + Math.random() * 760, 295 + Math.random() * 245, frame, 1.25).setInteractive({ useHandCursor: true });
       this.tweens.add({
         targets: g,
         x: Phaser.Math.Clamp(g.x + (Math.random() - 0.5) * 260, 240, 1050),
@@ -153,42 +177,43 @@ export class MinigameScene extends Phaser.Scene {
         repeat: -1
       });
 
-      const popGerm = () => {
-        if (this.finished || !g.active) return;
+      const zap = () => {
+        if (!g.active || this.finished) return;
+        const gx = g.x, gy = g.y;
         g.disableInteractive();
-        this.combo++;
-        sound.combo(this.combo);
-        this.tweens.add({ targets: soap, scaleY: 1.3, duration: 80, yoyo: true });
-
-        const bubble = this.add.image(soap.x, soap.y - 30, 'mg', 2).setScale(1.1);
+        const bub = this.mgImg(soap.x, soap.y - 20, 2, 0.9);
+        this.tweens.add({ targets: soap, scaleY: 1.3 * MG_MULT, duration: 80, yoyo: true });
         this.tweens.add({
-          targets: bubble,
-          x: g.x, y: g.y, duration: 150,
+          targets: bub, x: gx, y: gy, duration: 150,
           onComplete: () => {
-            bubble.destroy();
-            this.burst(g.x, g.y, 0xbae6fd, 10);
-            this.floatScore(g.x, g.y, '+泡泡潔淨!');
-            g.destroy();
+            bub.destroy();
+            if (g.active) g.destroy();
+            this.burst(gx, gy, 0x7dd3fc, 10);
+            this.combo++;
+            sound.combo(this.combo);
             cleared++;
+            this.floatScore(gx, gy, '✨泡泡滅菌!');
             this.updateProgress(cleared / total);
             if (cleared >= total) this.winGame();
-            else if (cleared + 4 <= total) spawnGerm();
           }
         });
       };
-      g.on('pointerdown', popGerm);
-      g.on('pointerover', (p: Phaser.Input.Pointer) => { if (p.isDown) popGerm(); });
+
+      g.on('pointerdown', zap);
+      g.on('pointerover', (p: Phaser.Input.Pointer) => { if (p.isDown) zap(); });
     };
-    for (let i = 0; i < 5; i++) spawnGerm();
+
+    for (let i = 0; i < 6; i++) spawnGerm();
+    this.time.addEvent({ delay: 650, repeat: 5, callback: spawnGerm });
   }
 
   private setupBrushTeeth(): void {
     this.setHeader('🪥 護齒刷牙大掃除', '按住並來回滑動刷洗全部 10 顆「黃色牙菌膜牙齒」（每顆刷 3 下），並拍走紅色蛀牙菌！');
     this.add.rectangle(640, 442, 920, 355, 0x3b0764).setStrokeStyle(3, 0xf472b6);
-    this.add.image(235, 325, 'home-props', 'mirror').setScale(1.3);
-    this.add.image(1040, 330, 'home-props', 'towel').setScale(1.3);
+    this.homeProp(235, 325, 'mirror', 1.3);
+    this.homeProp(1040, 330, 'towel', 1.3);
 
-    const brush = this.add.image(640, 540, 'mg', 7).setScale(1.7).setDepth(50);
+    const brush = this.mgImg(640, 540, 7, 1.7).setDepth(50);
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       brush.setPosition(Phaser.Math.Clamp(p.x, 220, 1060), Phaser.Math.Clamp(p.y, 275, 590));
     });
@@ -197,49 +222,45 @@ export class MinigameScene extends Phaser.Scene {
     for (let i = 0; i < 10; i++) {
       const tx = 350 + (i % 5) * 145;
       const ty = i < 5 ? 360 : 500;
-      const tooth = this.add.sprite(tx, ty, 'mg', 6).setScale(1.65).setInteractive({ useHandCursor: true });
+      const tooth = this.mgSpr(tx, ty, 6, 1.65).setInteractive({ useHandCursor: true });
       let scrubs = 0;
       let cooldown = 0;
 
-      const doScrub = () => {
-        if (this.finished || scrubs >= 3 || this.time.now < cooldown) return;
-        cooldown = this.time.now + 130;
+      const scrub = () => {
+        if (this.finished || scrubs >= 3 || this.time.now - cooldown < 140) return;
+        cooldown = this.time.now;
         scrubs++;
         sound.pop();
-        const foam = this.add.image(tx + (Math.random() - 0.5) * 30, ty, 'mg', 2).setScale(0.8);
-        this.tweens.add({ targets: foam, y: ty - 28, alpha: 0, duration: 350, onComplete: () => foam.destroy() });
-
+        this.burst(tx, ty, 0xe0f2fe, 5);
+        tooth.setAngle(scrubs % 2 === 0 ? -7 : 7);
         if (scrubs >= 3) {
-          tooth.setFrame(5);
+          tooth.setFrame(5).setAngle(0);
+          cleanTeeth++;
           this.combo++;
           sound.combo(this.combo);
-          this.burst(tx, ty, 0xffffff, 8);
           this.floatScore(tx, ty - 20, '✨潔白!');
-          cleanTeeth++;
           this.updateProgress(cleanTeeth / 10);
           if (cleanTeeth >= 10) this.winGame();
-        } else {
-          tooth.setAlpha(0.85 + scrubs * 0.05);
         }
       };
-      tooth.on('pointerdown', doScrub);
-      tooth.on('pointerover', (p: Phaser.Input.Pointer) => { if (p.isDown) doScrub(); });
+
+      tooth.on('pointerdown', scrub);
+      tooth.on('pointerover', (p: Phaser.Input.Pointer) => { if (p.isDown) scrub(); });
     }
 
     this.time.addEvent({
-      delay: 1800,
+      delay: 1900,
       loop: true,
       callback: () => {
         if (this.finished) return;
-        const imp = this.add.sprite(300 + Math.random() * 680, 430, 'mg', 8).setScale(1.25).setInteractive({ useHandCursor: true });
+        const imp = this.mgSpr(300 + Math.random() * 680, 430, 8, 1.25).setInteractive({ useHandCursor: true });
         imp.on('pointerdown', () => {
           this.combo++;
           sound.combo(this.combo);
-          this.burst(imp.x, imp.y, 0xf43f5e, 8);
-          this.floatScore(imp.x, imp.y, '+擊退蛀牙菌!');
+          this.burst(imp.x, imp.y, 0xfb7185, 8);
           imp.destroy();
         });
-        this.time.delayedCall(1500, () => { if (imp.active) imp.destroy(); });
+        this.time.delayedCall(1600, () => { if (imp.active) imp.destroy(); });
       }
     });
   }
@@ -247,17 +268,17 @@ export class MinigameScene extends Phaser.Scene {
   private setupTrimNails(): void {
     this.setHeader('💅 精準剪甲節奏王', '當上方移動的「銀色指甲鉗」對準下方藏垢長指甲時，點擊畫面精準修剪全部 5 指！');
     this.add.rectangle(640, 442, 920, 355, 0x1e293b).setStrokeStyle(3, 0x38bdf8);
-    this.add.image(245, 515, 'home-props', 'computer_desk').setScale(1.1).setAlpha(0.85);
+    this.homeProp(245, 515, 'computer_desk', 1.1).setAlpha(0.85);
 
     const fingers: { x: number; spr: Phaser.GameObjects.Sprite; trimmed: boolean }[] = [];
     for (let i = 0; i < 5; i++) {
       const fx = 360 + i * 145;
-      const spr = this.add.sprite(fx, 518, 'mg', 9).setScale(1.9);
+      const spr = this.mgSpr(fx, 518, 9, 1.9);
       this.add.circle(fx, 438, 18, 0x10b981, 0.28).setStrokeStyle(2, 0x34d399);
       fingers.push({ x: fx, spr, trimmed: false });
     }
 
-    const clipper = this.add.sprite(280, 348, 'mg', 11).setScale(1.8).setAngle(90);
+    const clipper = this.mgSpr(280, 348, 11, 1.8).setAngle(90);
     this.tweens.add({ targets: clipper, x: 1020, duration: 1550, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     let doneCount = 0;
@@ -272,7 +293,7 @@ export class MinigameScene extends Phaser.Scene {
         doneCount++;
         this.combo++;
         sound.combo(this.combo);
-        this.burst(hit.x, 450, 0x34d399, 12);
+        this.burst(hit.x, 455, 0x34d399, 10);
         this.floatScore(hit.x, 420, '✂️ 乾淨利落!');
         this.updateProgress(doneCount / 5);
         if (doneCount >= 5) this.winGame();
@@ -281,7 +302,7 @@ export class MinigameScene extends Phaser.Scene {
         this.combo = 0;
         sound.wrong();
         this.cameras.main.shake(120, 0.006);
-        this.floatScore(clipper.x, 380, '未對準指甲!', '#fca5a5');
+        this.floatScore(clipper.x, 390, '未對準綠圈！', '#fca5a5');
       }
     });
   }
@@ -289,18 +310,18 @@ export class MinigameScene extends Phaser.Scene {
   private setupCoverFood(): void {
     this.setHeader('🍲 餐桌防鼠保衛戰', '點擊 4 碟餸菜蓋上「防塵罩」，並拍走偷襲的老鼠與蒼蠅（完成加蓋及擊退 6 隻害蟲）！');
     this.add.rectangle(640, 442, 920, 355, 0x451a03).setStrokeStyle(3, 0xf59e0b);
-    this.add.image(640, 460, 'home-props', 'dining_table').setScale(3.1);
+    this.homeProp(640, 460, 'dining_table', 3.1);
 
     let covered = 0;
     let swatted = 0;
-    const checkWin = () => {
+    const check = () => {
       this.updateProgress((covered + Math.min(6, swatted)) / 10);
       if (covered >= 4 && swatted >= 6) this.winGame();
     };
 
     const positions = [[510, 390], [770, 390], [510, 480], [770, 480]];
     positions.forEach(([px, py]) => {
-      const dish = this.add.sprite(px, py, 'mg', 12).setScale(1.6).setInteractive({ useHandCursor: true });
+      const dish = this.mgSpr(px, py, 12, 1.6).setInteractive({ useHandCursor: true });
       let isCov = false;
       dish.on('pointerdown', () => {
         if (isCov || this.finished) return;
@@ -308,15 +329,15 @@ export class MinigameScene extends Phaser.Scene {
         covered++;
         this.combo++;
         sound.combo(this.combo);
-        const dome = this.add.image(px, py - 40, 'mg', 13).setScale(1.7);
-        this.tweens.add({ targets: dome, y: py - 4, duration: 180, ease: 'Bounce.easeOut' });
-        this.floatScore(px, py - 30, '🛡️已加蓋!');
-        checkWin();
+        const dome = this.mgImg(px, py - 50, 13, 1.65);
+        this.tweens.add({ targets: dome, y: py - 6, duration: 200, ease: 'Bounce.easeOut' });
+        this.floatScore(px, py - 30, '🛡️ 已加蓋!');
+        check();
       });
     });
 
     this.time.addEvent({
-      delay: 750,
+      delay: 720,
       loop: true,
       callback: () => {
         if (this.finished) return;
@@ -324,29 +345,29 @@ export class MinigameScene extends Phaser.Scene {
         const side = Math.random() < 0.5 ? 210 : 1070;
         const py = 295 + Math.random() * 275;
         const pest = isRat
-          ? this.add.sprite(side, py, 'npcs', 24).setScale(1.3).play('rat-scurry')
-          : this.add.sprite(side, py, 'mg', 15).setScale(1.2);
+          ? this.npcSpr(side, py, 24, 1.3).play('rat-scurry')
+          : this.mgSpr(side, py, 15, 1.2);
         pest.setFlipX(side < 640).setInteractive({ useHandCursor: true });
         this.tweens.add({
           targets: pest, x: 640, y: 440, duration: 2400,
           onComplete: () => {
             if (pest.active) {
               this.mistakes++;
+              this.combo = 0;
               sound.wrong();
-              this.cameras.main.shake(100, 0.005);
               pest.destroy();
             }
           }
         });
         pest.on('pointerdown', () => {
-          if (this.finished) return;
+          if (!pest.active || this.finished) return;
           swatted++;
           this.combo++;
           sound.combo(this.combo);
-          this.burst(pest.x, pest.y, 0xfbbf24, 9);
-          this.floatScore(pest.x, pest.y, '💥擊退害蟲!');
+          this.burst(pest.x, pest.y, 0xfbbf24, 8);
+          this.floatScore(pest.x, pest.y, isRat ? '🐭 擊退老鼠!' : '🪰 拍走蒼蠅!');
           pest.destroy();
-          checkWin();
+          check();
         });
       }
     });
@@ -355,19 +376,19 @@ export class MinigameScene extends Phaser.Scene {
   private setupClearSaucer(): void {
     this.setHeader('🪴 倒積水滅孑孓挑戰', '連點 4 個積水花盆底盤倒走積水，並點擊消滅水中扭動的「孑孓」與飛出的白紋伊蚊！');
     this.add.rectangle(640, 442, 920, 355, 0x14532d).setStrokeStyle(3, 0x4ade80);
-    this.add.image(235, 350, 'home-props', 'plant_large').setScale(1.1);
-    this.add.image(1045, 360, 'home-props', 'plant_whitepot').setScale(1.2);
+    this.homeProp(235, 350, 'plant_large', 1.1);
+    this.homeProp(1045, 360, 'plant_whitepot', 1.2);
 
     let dryCount = 0;
     let larvaCleared = 0;
     const check = () => {
-      this.updateProgress((dryCount * 2 + Math.min(6, larvaCleared)) / 14);
-      if (dryCount >= 4 && larvaCleared >= 6) this.winGame();
+      this.updateProgress((dryCount * 2 + larvaCleared) / 16);
+      if (dryCount >= 4 && larvaCleared >= 8) this.winGame();
     };
 
     for (let i = 0; i < 4; i++) {
       const sx = 310 + i * 220;
-      const saucer = this.add.sprite(sx, 520, 'mg', 16).setScale(1.85).setInteractive({ useHandCursor: true });
+      const saucer = this.mgSpr(sx, 520, 16, 1.85).setInteractive({ useHandCursor: true });
       let taps = 0;
       saucer.on('pointerdown', () => {
         if (this.finished || taps >= 3) return;
@@ -386,15 +407,15 @@ export class MinigameScene extends Phaser.Scene {
       });
 
       for (let k = 0; k < 2; k++) {
-        const lv = this.add.sprite(sx - 24 + k * 48, 410 - k * 45, 'mg', 17).setScale(1.35).setInteractive({ useHandCursor: true });
+        const lv = this.mgSpr(sx - 24 + k * 48, 410 - k * 45, 17, 1.35).setInteractive({ useHandCursor: true });
         this.tweens.add({ targets: lv, angle: { from: -18, to: 18 }, y: lv.y - 22, duration: 520, yoyo: true, repeat: -1 });
         lv.on('pointerdown', () => {
           if (this.finished) return;
           larvaCleared++;
           this.combo++;
           sound.combo(this.combo);
-          this.burst(lv.x, lv.y, 0x6ee7b7, 8);
-          this.floatScore(lv.x, lv.y, '+消滅孑孓!');
+          this.burst(lv.x, lv.y, 0x86efac, 8);
+          this.floatScore(lv.x, lv.y, '🦟 消滅孑孓!');
           lv.destroy();
           check();
         });
@@ -408,14 +429,14 @@ export class MinigameScene extends Phaser.Scene {
 
     const items = [
       { frame: 20, bin: 0, name: '廢報紙 → 藍廢紙箱' },
-      { frame: 21, bin: 1, name: '空鋁罐 → 黃鋁罐箱' },
-      { frame: 19, bin: 2, name: '積水膠樽 → 清空入啡膠樽箱' },
-      { frame: 22, bin: 3, name: '果皮廚餘 → 有蓋垃圾桶' }
+      { frame: 21, bin: 1, name: '汽水鋁罐 → 黃鋁罐箱' },
+      { frame: 22, bin: 2, name: '飲品膠樽 → 啡膠樽箱' },
+      { frame: 19, bin: 3, name: '食剩果皮 → 有蓋垃圾桶' }
     ];
-    let sorted = 0;
+    let solved = 0;
     let cur = items[2];
 
-    const curSpr = this.add.sprite(640, 355, 'mg', cur.frame).setScale(2.2);
+    const curSpr = this.mgSpr(640, 355, cur.frame, 2.2);
     const curLabel = this.add.text(640, 428, '請選擇下方正確回收桶！', {
       fontSize: '21px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
     }).setOrigin(0.5);
@@ -428,32 +449,29 @@ export class MinigameScene extends Phaser.Scene {
     ];
 
     bins.forEach(b => {
-      const bs = this.add.sprite(b.x, 525, 'mg', b.frame).setScale(1.75).setInteractive({ useHandCursor: true });
+      const bs = this.mgSpr(b.x, 525, b.frame, 1.75).setInteractive({ useHandCursor: true });
       this.add.text(b.x, 592, b.title, {
         fontSize: '19px', color: '#ffffff', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
       }).setOrigin(0.5);
       bs.on('pointerdown', () => {
         if (this.finished) return;
         if (b.idx === cur.bin) {
-          sorted++;
+          solved++;
           this.combo++;
           sound.combo(this.combo);
-          this.burst(b.x, 510, 0x34d399, 10);
-          this.floatScore(b.x, 475, `✅ ${cur.name}`);
-          this.updateProgress(sorted / 8);
-          if (sorted >= 8) {
-            this.winGame();
-          } else {
-            cur = items[Math.floor(Math.random() * items.length)];
-            curSpr.setFrame(cur.frame);
-            this.tweens.add({ targets: curSpr, scale: { from: 0.6, to: 2.2 }, duration: 200 });
-          }
+          this.burst(b.x, 500, 0x34d399, 10);
+          this.floatScore(b.x, 470, `✅ ${cur.name}`);
+          this.updateProgress(solved / 8);
+          if (solved >= 8) { this.winGame(); return; }
+          cur = items[Math.floor(Math.random() * items.length)];
+          curSpr.setFrame(cur.frame);
+          this.tweens.add({ targets: curSpr, scale: { from: 0.6 * MG_MULT, to: 2.2 * MG_MULT }, duration: 200 });
         } else {
           this.mistakes++;
           this.combo = 0;
           sound.wrong();
           this.cameras.main.shake(120, 0.006);
-          curLabel.setText('⚠️ 口訣：藍廢紙、黃鋁罐、啡膠樽、廚餘入有蓋桶！');
+          curLabel.setText('❌ 口訣：藍廢紙、黃鋁罐、啡膠樽，廚餘入有蓋桶！').setColor('#fca5a5');
         }
       });
     });
@@ -480,11 +498,11 @@ export class MinigameScene extends Phaser.Scene {
       if (acFixed && kills >= 7) this.winGame();
     });
 
-    const can = this.add.image(640, 568, 'mg', 26).setScale(1.6).setDepth(40);
+    const can = this.mgImg(640, 568, 26, 1.6).setDepth(40);
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => { can.x = Phaser.Math.Clamp(p.x, 260, 1020); });
 
     this.time.addEvent({
-      delay: 720,
+      delay: 750,
       loop: true,
       callback: () => {
         if (this.finished) return;
@@ -492,36 +510,36 @@ export class MinigameScene extends Phaser.Scene {
         const sx = 370 + Math.random() * 630;
         const sy = 295 + Math.random() * 205;
         const target = isButterfly
-          ? this.add.sprite(sx, sy, 'mg', 28).setScale(1.3)
-          : this.add.sprite(sx, sy, 'npcs', 20).setScale(1.45).play('mosquito-fly');
+          ? this.mgSpr(sx, sy, 28, 1.3)
+          : this.npcSpr(sx, sy, 20, 1.45).play('mosquito-fly');
         target.setInteractive({ useHandCursor: true });
-        this.tweens.add({ targets: target, x: sx + (Math.random() - 0.5) * 180, y: sy - 30, duration: 1500, yoyo: true });
+        this.tweens.add({
+          targets: target,
+          x: Phaser.Math.Clamp(sx + (Math.random() - 0.5) * 320, 320, 1030),
+          y: Phaser.Math.Clamp(sy + (Math.random() - 0.5) * 160, 270, 510),
+          duration: 950, yoyo: true, repeat: 2,
+          onComplete: () => { if (target.active) target.destroy(); }
+        });
 
         target.on('pointerdown', () => {
           if (this.finished) return;
-          sound.spray();
-          const mist = this.add.image(target.x, target.y, 'mg', 27).setScale(1.4);
-          this.tweens.add({ targets: mist, alpha: 0, scale: 2, duration: 300, onComplete: () => mist.destroy() });
-
+          const mist = this.mgImg(target.x, target.y, 27, 1.4);
+          this.tweens.add({ targets: mist, alpha: 0, scale: 2 * MG_MULT, duration: 300, onComplete: () => mist.destroy() });
           if (isButterfly) {
             this.mistakes++;
             this.combo = 0;
             sound.wrong();
-            this.cameras.main.shake(120, 0.006);
-            this.floatScore(target.x, target.y, '⚠️ 別噴益蟲彩蝶!', '#fca5a5');
-            target.destroy();
+            this.floatScore(target.x, target.y, '🦋 勿噴益蟲蝴蝶!', '#fca5a5');
           } else {
             kills++;
             this.combo++;
             sound.combo(this.combo);
-            this.burst(target.x, target.y, 0x6ee7b7, 8);
-            this.floatScore(target.x, target.y, '+消滅白紋伊蚊!');
-            target.destroy();
+            this.floatScore(target.x, target.y, '💨 DEET 滅蚊!');
             this.updateProgress(((acFixed ? 1 : 0) + Math.min(7, kills)) / 8);
             if (acFixed && kills >= 7) this.winGame();
           }
+          target.destroy();
         });
-        this.time.delayedCall(2100, () => { if (target.active) target.destroy(); });
       }
     });
   }
@@ -540,7 +558,7 @@ export class MinigameScene extends Phaser.Scene {
     tools.forEach((t, idx) => {
       const box = this.add.rectangle(t.x, 548, 210, 80, 0x0f172a).setStrokeStyle(3, idx === 0 ? 0xfde047 : 0x64748b).setInteractive({ useHandCursor: true });
       toolBoxes.push(box);
-      this.add.image(t.x - 68, 548, 'mg', t.frame).setScale(1.0);
+      this.mgImg(t.x - 68, 548, t.frame, 1.0);
       this.add.text(t.x + 18, 548, t.label, {
         fontSize: '18px', color: '#ffffff', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
       }).setOrigin(0.5);
@@ -554,14 +572,14 @@ export class MinigameScene extends Phaser.Scene {
     let sealedCount = 0;
     for (let i = 0; i < 3; i++) {
       const hxPos = 370 + i * 270;
-      const hole = this.add.sprite(hxPos, 385, 'mg', 29).setScale(2.1).setInteractive({ useHandCursor: true });
+      const hole = this.mgSpr(hxPos, 385, 29, 2.1).setInteractive({ useHandCursor: true });
       const stLabel = this.add.text(hxPos, 468, '狀態：破損鼠洞', {
         fontSize: '18px', color: '#fca5a5', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
       }).setOrigin(0.5);
       let stage = 0;
 
       hole.on('pointerdown', () => {
-        if (this.finished || stage === 2) return;
+        if (this.finished || stage >= 2) return;
         if (selectedTool === 'paper') {
           this.mistakes++;
           sound.wrong();
@@ -579,8 +597,8 @@ export class MinigameScene extends Phaser.Scene {
           this.updateProgress((sealedCount * 2 + 1) / 6);
         } else if (stage === 1 && selectedTool === 'mesh') {
           stage = 2;
-          hole.clearTint().setTexture('tiles-street', 15);
-          stLabel.setText('✅ 堅固封死！').setColor('#6ee7b7');
+          hole.clearTint().setTexture('tiles-street', 15).setScale(2.1);
+          stLabel.setText('✅ 鐵絲網封妥！').setColor('#6ee7b7');
           sealedCount++;
           this.combo++;
           sound.combo(this.combo);
@@ -597,22 +615,22 @@ export class MinigameScene extends Phaser.Scene {
 
   private setupFehdQuiz(): void {
     this.setHeader('👮 食環署主任終極常識考核', '回答 3 道香港環境衛生常識問題，獲取彩雲聖若瑟小學榮譽證書！');
-    this.add.sprite(265, 435, 'npcs', 0).setScale(2.7);
+    this.npcSpr(265, 435, 0, 2.7);
 
     const qs = [
       {
-        q: '1. 在香港，負責保持社區環境衛生、滅蚊滅鼠及管理公眾垃圾桶的政府部門是？',
-        opts: ['A. 食物環境衞生署（食環署 FEHD）', 'B. 香港天文台', 'C. 路政署'],
+        q: '1. 在香港預防白紋伊蚊傳播登革熱，花盆底盤應怎樣處理？',
+        opts: ['每星期至少清理積水一次並刷洗底盤', '加入砂糖餵飼小昆蟲', '只噴香水掩蓋氣味'],
         ans: 0
       },
       {
-        q: '2. 養成良好個人衛生及清除積水、妥善處理垃圾，最重要的作用是？',
-        opts: ['A. 只為應付學校檢查', 'B. 杜絕病菌及蚊鼠傳播媒介，減低患上登革熱與鼠疫等傳染病機會', 'C. 增加垃圾桶數量'],
+        q: '2. 食環署推廣「防鼠三部曲」是指絕鼠糧、斷鼠路及哪一項？',
+        opts: ['養貓捉鼠', '毀鼠藏（清除雜物及封塞鼠洞）', '擺放舊報紙'],
         ans: 1
       },
       {
-        q: '3. 小四同學在日常生活中，怎樣做才能有效協助社區防蚊防鼠？',
-        opts: ['A. 把飲完的膠樽留在公園長椅', 'B. 不亂拋垃圾、清空膠樽投入啡色回收箱，並定期倒走花盆底盤積水', 'C. 用紙皮塞住後巷渠道'],
+        q: '3. 用梘液洗手時，應至少揉擦雙手多少秒才能有效殺滅病菌？',
+        opts: ['3 秒沖水即可', '至少 20 秒（涵蓋指縫、手背及指甲縫）', '只在飯後抹乾雙手'],
         ans: 1
       }
     ];
@@ -641,22 +659,16 @@ export class MinigameScene extends Phaser.Scene {
         btn.on('pointerdown', () => {
           if (this.finished) return;
           if (oi === cur.ans) {
+            qIdx++;
             this.combo++;
             sound.combo(this.combo);
-            this.burst(700, btn.y, 0x34d399, 12);
-            qIdx++;
             this.updateProgress(qIdx / qs.length);
-            if (qIdx >= qs.length) {
-              gameState.fehdQuizPassed = true;
-              this.winGame();
-            } else {
-              renderQ();
-            }
+            if (qIdx >= qs.length) this.winGame();
+            else renderQ();
           } else {
             this.mistakes++;
             sound.wrong();
-            this.cameras.main.shake(120, 0.006);
-            this.floatScore(700, btn.y, '再想一想課本知識！', '#fca5a5');
+            btn.setBackgroundColor('#991b1b');
           }
         });
         optBtns.push(btn);
