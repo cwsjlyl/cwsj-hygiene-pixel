@@ -1,32 +1,29 @@
-/**
- * Standalone foreground prop keys & coordinates for Home (26 items) and HK Street (10 complete pure-transparent items)
- */
 export const HOME_STANDALONE_PROP_KEYS = [
   'double_bed',
-  'bathtub',
-  'sofa_2seat',
-  'green_rug',
-  'shower',
-  'kitchen_bottom',
-  'cake_table',
-  'dining_table',
-  'computer_desk',
   'tv_cabinet',
+  'door',
+  'shower',
+  'sofa_2seat',
+  'chair_front',
+  'cake_table',
+  'green_rug',
   'plant_large',
-  'sink_vanity',
+  'dining_table',
   'armchair_left',
   'armchair_right',
-  'kitchen_top',
-  'front_door',
-  'balcony_railing',
-  'plant_whitepot',
+  'sink_vanity',
+  'computer_desk',
   'toilet',
+  'nightstand',
+  'chair_side',
+  'bathtub',
+  'plant_whitepot',
   'toy_box',
   'plant_small',
-  'chair_side',
-  'chair_front',
+  'kitchen_top',
+  'kitchen_bottom',
+  'balcony_railing',
   'mirror',
-  'nightstand',
   'towel'
 ] as const;
 
@@ -34,13 +31,9 @@ export type HomeStandalonePropKey = (typeof HOME_STANDALONE_PROP_KEYS)[number];
 
 export interface StreetPropPlacement {
   key: string;
-  /** Left X in 1408x768 HK street reference space */
   x: number;
-  /** Top Y in 1408x768 HK street reference space */
   y: number;
-  /** Width in 1408x768 HK street reference space */
   w: number;
-  /** Height in 1408x768 HK street reference space */
   h: number;
   layer: 'ground' | 'ysort' | 'sign';
 }
