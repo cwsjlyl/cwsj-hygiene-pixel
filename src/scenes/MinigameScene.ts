@@ -130,7 +130,7 @@ export class MinigameScene extends Phaser.Scene {
   private winGame(): void {
     if (this.finished) return;
     this.finished = true;
-    sound.win();
+    sound.success();
 
     const medal: MedalRank = this.mistakes === 0 ? 'gold' : this.mistakes <= 2 ? 'silver' : 'bronze';
     const bonus = medal === 'gold' ? 80 : medal === 'silver' ? 40 : 15;

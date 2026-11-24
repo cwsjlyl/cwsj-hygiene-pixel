@@ -98,7 +98,7 @@ function encodeIndexedOrRgbaPng(w, h, rgba) {
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
   ihdr[8] = 8;
-  ihdr[9] = 3; // Indexed-color PNG8
+  ihdr[9] = 3;
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
@@ -210,17 +210,19 @@ function decodePngToRgba(buf) {
 }
 
 /**
- * 將 512x512 (僅上半 512x256 含 32 格 64x64 EPX-2x 圖元) 精準無損逆轉還原為
- * 256x128 (32x32 原生銳利像素) 並壓縮為 8-bit PNG8，減省 87.5% iPad VRAM 與 >80% 體積
+ * 將任意 64x64 格 EPX-2x 圖集 (如 512x256 或 256x512) 精準無損逆轉還原為
+ * 1/2 寬高 (32x32 原生銳利像素) 並壓縮為 8-bit PNG8，減省 75% iPad VRAM 與 ~70% 體積
  */
 function compressSheetToIpadLightweight(pngPath, label) {
   if (!fs.existsSync(pngPath)) return false;
   const origBuf = fs.readFileSync(pngPath);
   const { w, h, rgba } = decodePngToRgba(origBuf);
-  if (w !== 512 || h < 256) return false;
+  if (w < 128 || h < 128 || w % 2 !== 0 || h % 2 !== 0) return false;
+  // 若已是 32x32 輕量尺寸 (如 256x128 或 128x256)，直接通過
+  if ((w === 256 && h === 128) || (w === 128 && h === 256)) return true;
 
-  const outW = 256;
-  const outH = 128;
+  const outW = w / 2;
+  const outH = h / 2;
   const outRgba = new Uint8Array(outW * outH * 4);
 
   for (let dy = 0; dy < outH; dy++) {
@@ -231,7 +233,6 @@ function compressSheetToIpadLightweight(pngPath, label) {
         [dx * 2, dy * 2 + 1],
         [dx * 2 + 1, dy * 2 + 1]
       ];
-      // 以 2x2 區塊眾數 (Mode) 精準逆轉 Scale2x/EPX，100% 保留 1px 黑邊與細節
       let bestKey = '';
       let bestCnt = 0;
       let bestPx = [0, 0, 0, 0];
@@ -264,7 +265,7 @@ function compressSheetToIpadLightweight(pngPath, label) {
   const compressed = encodeIndexedOrRgbaPng(outW, outH, outRgba);
   fs.writeFileSync(pngPath, compressed);
   console.log(
-    `[v6-lightweight] Compressed ${label}: ${w}x${h} (${(origBuf.length / 1024).toFixed(1)} KB) -> ${outW}x${outH} PNG8 (${(compressed.length / 1024).toFixed(1)} KB, -87.5% VRAM)`
+    `[v6-lightweight] Compressed ${label}: ${w}x${h} (${(origBuf.length / 1024).toFixed(1)} KB) -> ${outW}x${outH} PNG8 (${(compressed.length / 1024).toFixed(1)} KB, -75% VRAM)`
   );
   return true;
 }
@@ -648,7 +649,7 @@ async function runPipeline() {
     console.log(`[v6-home-props] Verified -> wrote home-props-atlas.webp (${(propsBuf.length / 1024).toFixed(1)} KB, 26 frames) & removed 26 redundant PNGs!`);
   }
 
-  // 1e. Compress Quest Minigame & NPC/Pest spritesheets into 256x128 8-bit PNG8 (-87.5% VRAM)
+  // 1e. Compress Quest Minigame (512x256->256x128) & NPC/Pest (256x512->128x256) sheets into 8-bit PNG8
   const mgLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'minigame-sprites.png'), 'minigame-sprites.png');
   const npcLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'sprites-npcs-pests.png'), 'sprites-npcs-pests.png');
   const lightMgNpcs = mgLight && npcLight;
