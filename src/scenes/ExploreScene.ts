@@ -5,7 +5,9 @@ import {
   V5_HD_CHARS_ENABLED,
   V5_VALID_STREET_PROPS,
   V6_HOME_PROPS_SCALE,
-  V6_LIGHT_MG_NPCS
+  V6_LIGHT_MG_NPCS,
+  V6_LIGHT_STREET_TILES,
+  V6_STREET_PROPS_ATLAS
 } from '../gfx/v5RuntimeConfig';
 import { VirtualJoystick } from '../input/VirtualJoystick';
 import { gameState, MapId, MedalRank } from '../state/gameState';
@@ -34,6 +36,7 @@ interface TapWalkTarget {
 const COMPACT_HOME_PAD_X = 6;
 const COMPACT_HOME_RATIO = 2 / 3;
 const MG_NPC_MULT = V6_LIGHT_MG_NPCS ? 2 : 1;
+const STREET_TILE_MULT = V6_LIGHT_STREET_TILES ? 2 : 1;
 
 function hx(x1902: number): number {
   return Math.round(COMPACT_HOME_PAD_X + x1902 * COMPACT_HOME_RATIO);
@@ -92,7 +95,7 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到溫馨像素家居！全屋擺設已整齊歸位，你可以直接輕觸地圖任意地點走過去，或點選發光家具自動上前互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】前往香港街道冒險吧！`
+      `${gameState.studentName}，歡迎回到溫馨像素家居！全屋與香港街道擺設均已升級為 iPad 輕量極速版，你可以輕觸地圖任意地點走過去，或點選發光家具自動上前互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】出發吧！`
     );
   }
 
@@ -195,9 +198,6 @@ export class ExploreScene extends Phaser.Scene {
     this.colliders.add(z);
   }
 
-  /**
-   * 統一由 8.1KB 輕量 WebP 圖集 ('home-props') 載入家具，並依 1268x920 緊湊家居比例對齊
-   */
   private addHomeProp(
     key: HomeStandalonePropKey,
     x: number,
@@ -287,7 +287,6 @@ export class ExploreScene extends Phaser.Scene {
     const bg = this.add.image(COMPACT_HOME_PAD_X, 0, 'map-home').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(1268, 920);
 
-    // 阻擋露台左右外側深色透明背景區域
     this.addFootCollider(hx(260), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
     this.addFootCollider(hx(1640), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
 
@@ -311,7 +310,6 @@ export class ExploreScene extends Phaser.Scene {
     roomBadge(1535, 540, '💻 小明睡房');
     roomBadge(960, 1045, '🌿 陽光露台');
 
-    // 1. 🚪 左上玄關走廊：玄關大門與迎賓小盆栽
     const frontDoor = this.addHomeProp('door', hx(210), hy(108), 1.0, false, -5);
     this.addHomeProp('plant_small', hx(350), hy(145), 0.92, false);
     const doorEmote = this.add.sprite(hx(210), hy(44), 'npcs', 29).setScale(0.95 * MG_NPC_MULT).setDepth(4200);
@@ -322,7 +320,6 @@ export class ExploreScene extends Phaser.Scene {
       sprite: frontDoor, emote: doorEmote
     });
 
-    // 2. 🍳 中上廚房與飯廳：靠牆上下廚櫃組 ＋ 前方餐桌餐椅（任務 4：餐桌防鼠保衛戰）
     this.addHomeProp('kitchen_top', hx(790), hy(92), 0.84, false, -18);
     this.addHomeProp('kitchen_bottom', hx(790), hy(174), 0.84, true);
     this.addHomeProp('chair_side', hx(495), hy(305), 0.92, false);
@@ -334,26 +331,22 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.registerTaskHotspot('cover_food', hx(595), hy(318), '🍲 按 A 或輕觸餐桌進入「餐桌防鼠保衛戰」', cakeTable, 94);
 
-    // 3. 🧼 中右上方洗手間：洗手盆連鏡、淋浴間與座廁（任務 1：洗手泡泡滅菌戰）
     this.addHomeProp('mirror', hx(1025), hy(148), 0.95, false, -20);
     const sinkSpr = this.addHomeProp('sink_vanity', hx(1025), hy(228), 0.96, false);
     this.addHomeProp('shower', hx(1235), hy(185), 0.88, true);
     this.addHomeProp('toilet', hx(1245), hy(355), 0.9, true);
     this.registerTaskHotspot('wash_hands', hx(1025), hy(250), '🧼 按 A 或輕觸洗手盆進入「洗手泡泡滅菌戰」', sinkSpr, 94);
 
-    // 4. 🛏️ 右上主人睡房：雙人床、床頭櫃與室內盆栽
     this.addHomeProp('nightstand', hx(1445), hy(178), 0.92, true);
     this.addHomeProp('double_bed', hx(1615), hy(215), 0.96, true);
     this.addHomeProp('plant_large', hx(1775), hy(205), 0.88, false);
 
-    // 5. 🛋️ 左下溫馨客廳：電視櫃、中央綠地毯、左右扶手椅與雙人紅梳化
     this.addHomeProp('tv_cabinet', hx(365), hy(585), 0.95, true);
     this.addHomeProp('green_rug', hx(365), hy(765), 1.02, false).setDepth(8);
     this.addHomeProp('armchair_left', hx(180), hy(765), 0.92, true);
     this.addHomeProp('armchair_right', hx(550), hy(765), 0.92, true);
     this.addHomeProp('sofa_2seat', hx(365), hy(915), 0.96, true);
 
-    // 6. 🛁 中下浴室梳洗區：座廁、浴缸、鏡子、毛巾架與梳洗台（任務 2：護齒刷牙大掃除）
     this.addHomeProp('toilet', hx(1015), hy(748), 0.88, true);
     this.addHomeProp('bathtub', hx(1058), hy(912), 0.88, true);
     this.addHomeProp('mirror', hx(1252), hy(702), 0.95, false, -20);
@@ -361,7 +354,6 @@ export class ExploreScene extends Phaser.Scene {
     const toothVanity = this.addHomeProp('sink_vanity', hx(1252), hy(780), 0.96, false);
     this.registerTaskHotspot('brush_teeth', hx(1252), hy(800), '🪥 按 A 或輕觸梳洗台進入「護齒刷牙大掃除」', toothVanity, 94);
 
-    // 7. 💻 右下小明睡房：睡床、床頭櫃、玩具箱與電腦書桌椅（任務 3：精準剪甲節奏王）
     this.addHomeProp('nightstand', hx(1555), hy(625), 0.86, true);
     this.addHomeProp('double_bed', hx(1705), hy(668), 0.8, true);
     this.addHomeProp('toy_box', hx(1725), hy(905), 0.92, true);
@@ -369,7 +361,6 @@ export class ExploreScene extends Phaser.Scene {
     this.addHomeProp('chair_front', hx(1475), hy(946), 0.88, false, 6);
     this.registerTaskHotspot('trim_nails', hx(1475), hy(912), '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr, 94);
 
-    // 8. 🌿 正下陽光露台：大中小盆栽與無縫對齊露台護欄（任務 5：倒積水滅孑孓挑戰）
     this.addHomeProp('plant_large', hx(812), hy(1185), 0.94, false);
     this.addHomeProp('plant_small', hx(1108), hy(1205), 0.96, false);
     this.addHomeProp('balcony_railing', hx(845), hy(1294), 0.86, false, 20);
@@ -377,7 +368,6 @@ export class ExploreScene extends Phaser.Scene {
     const potSpr = this.addHomeProp('plant_whitepot', hx(960), hy(1195), 1.08, false);
     this.registerTaskHotspot('clear_saucer', hx(960), hy(1210), '🪴 按 A 或輕觸花盆進入「倒積水滅孑孓挑戰」', potSpr, 96);
 
-    // 中央走廊：媽媽互動 NPC
     const useHdMom = V5_HD_CHARS_ENABLED && this.textures.exists('char-mom');
     const mom = useHdMom
       ? this.add.sprite(hx(705), hy(560), 'char-mom', 8).setScale(0.58).setDepth(hy(580)).play('hd-mom-right')
@@ -396,7 +386,6 @@ export class ExploreScene extends Phaser.Scene {
       label: '👩 按 A 或輕觸與媽媽對話查看衛生提示', sprite: mom
     });
 
-    // 主人睡房下側空地：妹妹巡邏 NPC
     const useHdSis = V5_HD_CHARS_ENABLED && this.textures.exists('char-sister');
     const sis = useHdSis
       ? this.add.sprite(hx(1430), hy(430), 'char-sister', 8).setScale(0.56).setDepth(hy(450)).play('hd-sister-right')
@@ -418,19 +407,25 @@ export class ExploreScene extends Phaser.Scene {
 
     const streetScale = worldW / 1408;
     const streetPropMap = new Map<string, Phaser.GameObjects.Image>();
+    const hasStreetAtlas = V6_STREET_PROPS_ATLAS && this.textures.exists('street-props');
+    const streetAtlasTex = hasStreetAtlas ? this.textures.get('street-props') : null;
 
     for (const spec of STREET_STANDALONE_PROP_SPECS) {
       if (!V5_VALID_STREET_PROPS.includes(spec.key)) continue;
+      const useAtlas = Boolean(streetAtlasTex && streetAtlasTex.has(spec.key));
       const tk = `prop-street-${spec.key}`;
-      if (!this.textures.exists(tk)) continue;
-      const cx = (spec.x + spec.w * 0.5) * streetScale;
-      const cy = (spec.y + spec.h * 0.5) * streetScale;
-      const spr = this.add.image(cx, cy, tk);
-      spr.setDisplaySize(spec.w * streetScale, spec.h * streetScale);
+      if (!useAtlas && !this.textures.exists(tk)) continue;
+
+      const cx = Math.round((spec.x + spec.w * 0.5) * streetScale);
+      const cy = Math.round((spec.y + spec.h * 0.5) * streetScale);
+      const spr = useAtlas
+        ? this.add.image(cx, cy, 'street-props', spec.key)
+        : this.add.image(cx, cy, tk);
+      spr.setDisplaySize(Math.round(spec.w * streetScale), Math.round(spec.h * streetScale));
 
       if (spec.layer === 'ground') spr.setDepth(16);
-      else if (spec.layer === 'sign') spr.setDepth((spec.y + spec.h) * streetScale + 140);
-      else spr.setDepth((spec.y + spec.h * 0.82) * streetScale);
+      else if (spec.layer === 'sign') spr.setDepth(Math.round((spec.y + spec.h) * streetScale) + 140);
+      else spr.setDepth(Math.round((spec.y + spec.h * 0.82) * streetScale));
       streetPropMap.set(spec.key, spr);
     }
 
@@ -480,7 +475,9 @@ export class ExploreScene extends Phaser.Scene {
 
     const recDone = gameState.isDone('recycle_bottles');
     const recycleSpr = streetPropMap.get('recycle_bins');
-    const bottles = this.add.sprite(441, 514, 'tiles-street', recDone ? 19 : 21).setScale(1.25).setDepth(524);
+    const bottles = this.add.sprite(441, 514, 'tiles-street', recDone ? 19 : 21)
+      .setScale(1.25 * STREET_TILE_MULT)
+      .setDepth(524);
     if (recycleSpr) {
       recycleSpr.setInteractive({ useHandCursor: true });
       recycleSpr.on('pointerdown', () => {
@@ -493,8 +490,12 @@ export class ExploreScene extends Phaser.Scene {
     this.registerTaskHotspot('recycle_bottles', 441, 505, '♻️ 按 A 或輕觸進入「香港三色回收快手」', bottles, 120);
 
     const mosDone = gameState.isDone('spray_mosquito');
-    const acUnit = this.add.sprite(1440, 345, 'tiles-street', mosDone ? 10 : 9).setScale(1.3).setDepth(395);
-    const puddle = this.add.sprite(1440, 465, 'tiles-street', mosDone ? 19 : 22).setScale(1.2).setDepth(460);
+    const acUnit = this.add.sprite(1440, 345, 'tiles-street', mosDone ? 10 : 9)
+      .setScale(1.3 * STREET_TILE_MULT)
+      .setDepth(395);
+    const puddle = this.add.sprite(1440, 465, 'tiles-street', mosDone ? 19 : 22)
+      .setScale(1.2 * STREET_TILE_MULT)
+      .setDepth(460);
     if (mosDone) puddle.setVisible(false);
     if (!mosDone) {
       this.add.sprite(1385, 415, 'npcs', 20).setScale(MG_NPC_MULT).setDepth(490).play('mosquito-fly');
@@ -511,7 +512,9 @@ export class ExploreScene extends Phaser.Scene {
     this.registerTaskHotspot('spray_mosquito', 1440, 455, '🦟 按 A 或輕觸進入「冷氣止漏 ＋ DEET 驅蚊射擊」', acUnit, 120);
 
     const ratDone = gameState.isDone('seal_rathole');
-    const rHole = this.add.sprite(1375, 765, 'tiles-street', ratDone ? 15 : 14).setScale(1.3).setDepth(775);
+    const rHole = this.add.sprite(1375, 765, 'tiles-street', ratDone ? 15 : 14)
+      .setScale(1.3 * STREET_TILE_MULT)
+      .setDepth(775);
     if (!ratDone) {
       const rat = this.add.sprite(1315, 805, 'npcs', 24).setScale(MG_NPC_MULT).setDepth(815).play('rat-scurry');
       this.tweens.add({ targets: rat, x: 1435, duration: 950, yoyo: true, repeat: -1 });
