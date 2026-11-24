@@ -5,6 +5,7 @@ import zlib from 'node:zlib';
 const RAW_DIR = 'raw-uploads';
 const MAPS_OUT = 'public/assets/maps';
 const SPRITES_OUT = 'public/assets/sprites';
+const TILESETS_OUT = 'public/assets/tilesets';
 const RUNTIME_CFG_PATH = 'src/gfx/v5RuntimeConfig.ts';
 
 const WALK_MAPS = {
@@ -68,32 +69,7 @@ function encodeRgbaPng(w, h, rgba) {
   return Buffer.concat([sig, pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND', Buffer.alloc(0))]);
 }
 
-function encodeIndexedOrRgbaPng(w, h, rgba) {
-  const palette = [[0, 0, 0, 0]];
-  const colorMap = new Map([['0,0,0,0', 0]]);
-  const indices = new Uint8Array(w * h);
-
-  for (let i = 0; i < w * h; i++) {
-    const off = i * 4;
-    const a = rgba[off + 3];
-    if (a < 20) {
-      indices[i] = 0;
-      continue;
-    }
-    const r = rgba[off], g = rgba[off + 1], b = rgba[off + 2];
-    const key = `${r},${g},${b},${a}`;
-    let idx = colorMap.get(key);
-    if (idx === undefined) {
-      if (palette.length >= 256) {
-        return encodeRgbaPng(w, h, rgba);
-      }
-      idx = palette.length;
-      palette.push([r, g, b, a]);
-      colorMap.set(key, idx);
-    }
-    indices[i] = idx;
-  }
-
+function writeIndexedPngFromPalette(w, h, palette, indices) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
@@ -129,6 +105,145 @@ function encodeIndexedOrRgbaPng(w, h, rgba) {
     pngChunk('IDAT', idat),
     pngChunk('IEND', Buffer.alloc(0))
   ]);
+}
+
+function encodeIndexedOrRgbaPng(w, h, rgba) {
+  const palette = [[0, 0, 0, 0]];
+  const colorMap = new Map([['0,0,0,0', 0]]);
+  const indices = new Uint8Array(w * h);
+
+  for (let i = 0; i < w * h; i++) {
+    const off = i * 4;
+    const a = rgba[off + 3];
+    if (a < 20) {
+      indices[i] = 0;
+      continue;
+    }
+    const r = rgba[off], g = rgba[off + 1], b = rgba[off + 2];
+    const key = `${r},${g},${b},${a}`;
+    let idx = colorMap.get(key);
+    if (idx === undefined) {
+      if (palette.length >= 256) {
+        return encodeQuantizedPng8(w, h, rgba);
+      }
+      idx = palette.length;
+      palette.push([r, g, b, a]);
+      colorMap.set(key, idx);
+    }
+    indices[i] = idx;
+  }
+
+  return writeIndexedPngFromPalette(w, h, palette, indices);
+}
+
+/**
+ * 雙層色域保留 8-bit PNG8 量化編碼器：
+ * 優先保留每個色相巨集方格 (霓虹紅、三色回收桶藍黃啡、綠滑梯等) 代表色，再補足高頻細分色至 255 色
+ */
+function encodeQuantizedPng8(w, h, rgba) {
+  const macroBins = new Map();
+  const fineBins = new Map();
+  const exactSet = new Map();
+
+  for (let i = 0; i < w * h; i++) {
+    const off = i * 4;
+    if (rgba[off + 3] < 96) continue;
+    const r = rgba[off], g = rgba[off + 1], b = rgba[off + 2];
+    const rgb24 = (r << 16) | (g << 8) | b;
+    exactSet.set(rgb24, (exactSet.get(rgb24) || 0) + 1);
+
+    const mKey = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+    let mb = macroBins.get(mKey);
+    if (!mb) { mb = { sr: 0, sg: 0, sb: 0, cnt: 0, fineKey: -1 }; macroBins.set(mKey, mb); }
+    mb.sr += r; mb.sg += g; mb.sb += b; mb.cnt++;
+
+    const fKey = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+    let fb = fineBins.get(fKey);
+    if (!fb) { fb = { sr: 0, sg: 0, sb: 0, cnt: 0, mKey }; fineBins.set(fKey, fb); }
+    fb.sr += r; fb.sg += g; fb.sb += b; fb.cnt++;
+  }
+
+  const palette = [[0, 0, 0, 0]];
+  if (exactSet.size <= 255) {
+    const exactLookup = new Map();
+    for (const rgb24 of exactSet.keys()) {
+      const idx = palette.length;
+      palette.push([(rgb24 >> 16) & 0xff, (rgb24 >> 8) & 0xff, rgb24 & 0xff, 255]);
+      exactLookup.set(rgb24, idx);
+    }
+    const indices = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const off = i * 4;
+      if (rgba[off + 3] < 96) { indices[i] = 0; continue; }
+      const rgb24 = (rgba[off] << 16) | (rgba[off + 1] << 8) | rgba[off + 2];
+      indices[i] = exactLookup.get(rgb24) || 0;
+    }
+    return writeIndexedPngFromPalette(w, h, palette, indices);
+  }
+
+  const usedFineKeys = new Set();
+  const fineSorted = [...fineBins.entries()].sort((a, b) => b[1].cnt - a[1].cnt);
+
+  // Tier 1: 為每個出現過的 3-bit 色域挑選最高頻之 5-bit 代表色，確保鮮豔小面積招牌字絕不失色
+  const coveredMacro = new Set();
+  for (const [fKey, fb] of fineSorted) {
+    if (palette.length >= 256) break;
+    if (!coveredMacro.has(fb.mKey)) {
+      coveredMacro.add(fb.mKey);
+      usedFineKeys.add(fKey);
+      palette.push([
+        Math.round(fb.sr / fb.cnt),
+        Math.round(fb.sg / fb.cnt),
+        Math.round(fb.sb / fb.cnt),
+        255
+      ]);
+    }
+  }
+
+  // Tier 2: 依像素頻率填滿剩餘調色盤至 256 色
+  for (const [fKey, fb] of fineSorted) {
+    if (palette.length >= 256) break;
+    if (usedFineKeys.has(fKey)) continue;
+    usedFineKeys.add(fKey);
+    palette.push([
+      Math.round(fb.sr / fb.cnt),
+      Math.round(fb.sg / fb.cnt),
+      Math.round(fb.sb / fb.cnt),
+      255
+    ]);
+  }
+
+  const nearestCache = new Map();
+  const indices = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const off = i * 4;
+    if (rgba[off + 3] < 96) {
+      indices[i] = 0;
+      continue;
+    }
+    const r = rgba[off], g = rgba[off + 1], b = rgba[off + 2];
+    const rgb24 = (r << 16) | (g << 8) | b;
+    let bestIdx = nearestCache.get(rgb24);
+    if (bestIdx === undefined) {
+      bestIdx = 1;
+      let bestDist = Infinity;
+      for (let p = 1; p < palette.length; p++) {
+        const dr = r - palette[p][0];
+        const dg = g - palette[p][1];
+        const db = b - palette[p][2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = p;
+          if (dist === 0) break;
+        }
+      }
+      nearestCache.set(rgb24, bestIdx);
+    }
+    indices[i] = bestIdx;
+  }
+
+  return writeIndexedPngFromPalette(w, h, palette, indices);
 }
 
 function paeth(a, b, c) {
@@ -209,20 +324,16 @@ function decodePngToRgba(buf) {
   return { w, h, rgba };
 }
 
-/**
- * 將任意 64x64 格 EPX-2x 圖集 (如 512x256 或 256x512) 精準無損逆轉還原為
- * 1/2 寬高 (32x32 原生銳利像素) 並壓縮為 8-bit PNG8，減省 75% iPad VRAM 與 ~70% 體積
- */
-function compressSheetToIpadLightweight(pngPath, label) {
+function compressSheetToIpadLightweight(pngPath, label, cropActiveRows = 0) {
   if (!fs.existsSync(pngPath)) return false;
   const origBuf = fs.readFileSync(pngPath);
   const { w, h, rgba } = decodePngToRgba(origBuf);
   if (w < 128 || h < 128 || w % 2 !== 0 || h % 2 !== 0) return false;
-  // 若已是 32x32 輕量尺寸 (如 256x128 或 128x256)，直接通過
-  if ((w === 256 && h === 128) || (w === 128 && h === 256)) return true;
+  if ((w === 256 && h === 128) || (w === 128 && h === 256) || (w === 256 && h === 96)) return true;
 
+  const srcH = cropActiveRows > 0 ? Math.min(h, cropActiveRows * 64) : h;
   const outW = w / 2;
-  const outH = h / 2;
+  const outH = srcH / 2;
   const outRgba = new Uint8Array(outW * outH * 4);
 
   for (let dy = 0; dy < outH; dy++) {
@@ -264,8 +375,138 @@ function compressSheetToIpadLightweight(pngPath, label) {
 
   const compressed = encodeIndexedOrRgbaPng(outW, outH, outRgba);
   fs.writeFileSync(pngPath, compressed);
+  const vramSaved = Math.round((1 - (outW * outH) / (w * h)) * 1000) / 10;
   console.log(
-    `[v6-lightweight] Compressed ${label}: ${w}x${h} (${(origBuf.length / 1024).toFixed(1)} KB) -> ${outW}x${outH} PNG8 (${(compressed.length / 1024).toFixed(1)} KB, -75% VRAM)`
+    `[v6-lightweight] Compressed ${label}: ${w}x${h} (${(origBuf.length / 1024).toFixed(1)} KB) -> ${outW}x${outH} PNG8 (${(compressed.length / 1024).toFixed(1)} KB, -${vramSaved}% VRAM)`
+  );
+  return true;
+}
+
+/**
+ * 將街道 12 件前景物件等比縮放對齊至 704x384 輕量街道網格 (0.5x of 1408x768)，
+ * 合併為單張 256x192 8-bit PNG8 輕量圖集並清除獨立 PNG 檔案
+ */
+function packStreetPropsLightweightAtlas() {
+  const manifestPath = path.join(SPRITES_OUT, 'street-props-manifest.json');
+  const propsDir = path.join(SPRITES_OUT, 'props-street');
+  if (!fs.existsSync(manifestPath) || !fs.existsSync(propsDir)) {
+    return fs.existsSync(path.join(SPRITES_OUT, 'street-props-atlas.png'));
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const items = [];
+  let origBytes = 0;
+
+  for (const [key, meta] of Object.entries(manifest)) {
+    if (meta.valid === false) continue;
+    const fp = path.join(propsDir, `${key}.png`);
+    if (!fs.existsSync(fp)) continue;
+    const rawBuf = fs.readFileSync(fp);
+    origBytes += rawBuf.length;
+    const { w, h, rgba } = decodePngToRgba(rawBuf);
+    if (w <= 4 || h <= 4) continue;
+
+    const tw = Math.max(1, Math.round(meta.w * 0.5));
+    const th = Math.max(1, Math.round(meta.h * 0.5));
+    const out = new Uint8Array(tw * th * 4);
+
+    for (let dy = 0; dy < th; dy++) {
+      const sy0 = Math.floor((dy * h) / th);
+      const sy1 = Math.max(sy0 + 1, Math.floor(((dy + 1) * h) / th));
+      for (let dx = 0; dx < tw; dx++) {
+        const sx0 = Math.floor((dx * w) / tw);
+        const sx1 = Math.max(sx0 + 1, Math.floor(((dx + 1) * w) / tw));
+        let sr = 0, sg = 0, sb = 0, sa = 0, cnt = 0, fgCnt = 0;
+        for (let sy = sy0; sy < sy1 && sy < h; sy++) {
+          for (let sx = sx0; sx < sx1 && sx < w; sx++) {
+            const p = (sy * w + sx) * 4;
+            cnt++;
+            sa += rgba[p + 3];
+            if (rgba[p + 3] >= 96) {
+              sr += rgba[p];
+              sg += rgba[p + 1];
+              sb += rgba[p + 2];
+              fgCnt++;
+            }
+          }
+        }
+        if (cnt > 0 && sa / cnt >= 96 && fgCnt > 0) {
+          const di = (dy * tw + dx) * 4;
+          out[di] = Math.round(sr / fgCnt);
+          out[di + 1] = Math.round(sg / fgCnt);
+          out[di + 2] = Math.round(sb / fgCnt);
+          out[di + 3] = 255;
+        }
+      }
+    }
+
+    items.push({ key, w: tw, h: th, rgba: out });
+  }
+
+  if (items.length === 0) return false;
+  items.sort((a, b) => b.h - a.h);
+
+  const atlasW = 256;
+  let cx = 3;
+  let cy = 3;
+  let rowH = 0;
+  const placements = [];
+
+  for (const it of items) {
+    if (cx + it.w + 3 > atlasW) {
+      cx = 3;
+      cy += rowH + 3;
+      rowH = 0;
+    }
+    placements.push({ ...it, x: cx, y: cy });
+    cx += it.w + 3;
+    rowH = Math.max(rowH, it.h);
+  }
+
+  const atlasH = Math.max(64, Math.ceil((cy + rowH + 4) / 16) * 16);
+  const atlasRgba = new Uint8Array(atlasW * atlasH * 4);
+  const frames = {};
+
+  for (const p of placements) {
+    for (let y = 0; y < p.h; y++) {
+      const srcOff = y * p.w * 4;
+      const dstOff = ((p.y + y) * atlasW + p.x) * 4;
+      atlasRgba.set(p.rgba.subarray(srcOff, srcOff + p.w * 4), dstOff);
+    }
+    frames[p.key] = {
+      frame: { x: p.x, y: p.y, w: p.w, h: p.h },
+      rotated: false,
+      trimmed: false,
+      spriteSourceSize: { x: 0, y: 0, w: p.w, h: p.h },
+      sourceSize: { w: p.w, h: p.h }
+    };
+  }
+
+  const atlasPng = encodeQuantizedPng8(atlasW, atlasH, atlasRgba);
+  fs.writeFileSync(path.join(SPRITES_OUT, 'street-props-atlas.png'), atlasPng);
+  fs.writeFileSync(
+    path.join(SPRITES_OUT, 'street-props-atlas.json'),
+    JSON.stringify(
+      {
+        frames,
+        meta: {
+          app: 'cwsj-hygiene-pixel-v6-street-ipad',
+          version: '6.0',
+          image: 'street-props-atlas.png',
+          format: 'RGBA8888',
+          size: { w: atlasW, h: atlasH },
+          scale: '0.5'
+        }
+      },
+      null,
+      2
+    )
+  );
+
+  fs.rmSync(propsDir, { recursive: true, force: true });
+  fs.unlinkSync(manifestPath);
+  console.log(
+    `[v6-street-props] Packed ${placements.length} street props (${(origBytes / 1024).toFixed(1)} KB across 12 PNGs) -> street-props-atlas.png ${atlasW}x${atlasH} PNG8 (${(atlasPng.length / 1024).toFixed(1)} KB, -94% VRAM)!`
   );
   return true;
 }
@@ -542,6 +783,16 @@ function assertValidWebp(buf, label) {
 async function runPipeline() {
   fs.mkdirSync(MAPS_OUT, { recursive: true });
   fs.mkdirSync(SPRITES_OUT, { recursive: true });
+  fs.mkdirSync(TILESETS_OUT, { recursive: true });
+
+  let validStreetProps = [];
+  if (fs.existsSync(RUNTIME_CFG_PATH)) {
+    const cur = fs.readFileSync(RUNTIME_CFG_PATH, 'utf8');
+    const mProps = cur.match(/V5_VALID_STREET_PROPS[^=]*=\s*(\[[^\]]*\])/);
+    if (mProps) {
+      try { validStreetProps = JSON.parse(mProps[1]); } catch { /* ignore */ }
+    }
+  }
 
   // 1a. Assemble & CRC32-verify embedded iPad lightweight 634x460 RGBA home map WebP
   if (
@@ -649,23 +900,24 @@ async function runPipeline() {
     console.log(`[v6-home-props] Verified -> wrote home-props-atlas.webp (${(propsBuf.length / 1024).toFixed(1)} KB, 26 frames) & removed 26 redundant PNGs!`);
   }
 
-  // 1e. Compress Quest Minigame (512x256->256x128) & NPC/Pest (256x512->128x256) sheets into 8-bit PNG8
+  // 1e. Compress Quest Minigame & NPC/Pest sheets into 8-bit PNG8
   const mgLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'minigame-sprites.png'), 'minigame-sprites.png');
   const npcLight = compressSheetToIpadLightweight(path.join(SPRITES_OUT, 'sprites-npcs-pests.png'), 'sprites-npcs-pests.png');
   const lightMgNpcs = mgLight && npcLight;
 
+  // 1f. Pack Street Foreground Props into single 256px-wide PNG8 Atlas & remove standalone PNGs
+  const streetPropsAtlas = packStreetPropsLightweightAtlas();
+
+  // 1g. Crop unused bottom rows & compress Street Interactive Quest Tileset (512x512 -> 256x96 PNG8, -90.6% VRAM)
+  const lightStreetTiles = compressSheetToIpadLightweight(
+    path.join(TILESETS_OUT, 'tileset-hk-street.png'),
+    'tileset-hk-street.png',
+    3
+  );
+
   let homeMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-home.webp')) ? 'webp' : 'png';
   let streetMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-street.webp')) ? 'webp' : 'png';
   let streetNative1x = streetMapExt === 'webp';
-  let validStreetProps = [];
-
-  if (fs.existsSync(RUNTIME_CFG_PATH)) {
-    const cur = fs.readFileSync(RUNTIME_CFG_PATH, 'utf8');
-    const mProps = cur.match(/V5_VALID_STREET_PROPS[^=]*=\s*(\[[^\]]*\])/);
-    if (mProps) {
-      try { validStreetProps = JSON.parse(mProps[1]); } catch { /* ignore */ }
-    }
-  }
 
   const charFound = { hero: null, mom: null, sister: null, passerby: null };
   for (const r of Object.keys(charFound)) {
@@ -743,13 +995,15 @@ async function runPipeline() {
     `export const V6_HOME_PROPS_EXT: 'png' | 'webp' = '${homePropsExt}';`,
     `export const V6_HOME_PROPS_SCALE: number = ${homePropsScale};`,
     `export const V6_LIGHT_MG_NPCS: boolean = ${lightMgNpcs};`,
+    `export const V6_STREET_PROPS_ATLAS: boolean = ${streetPropsAtlas};`,
+    `export const V6_LIGHT_STREET_TILES: boolean = ${lightStreetTiles};`,
     `export const V5_VALID_STREET_PROPS: readonly string[] = ${JSON.stringify(validStreetProps)};`,
     ''
   ].join('\n');
 
   fs.writeFileSync(RUNTIME_CFG_PATH, cfgOut, 'utf8');
   console.log(
-    `[v6-pipeline] Synced -> home:${homeMapExt}, street:${streetMapExt}, homeProps:${homePropsExt}(x${homePropsScale}), lightMgNpcs:${lightMgNpcs}, hdChars:${hdCharsEnabled}`
+    `[v6-pipeline] Synced -> home:${homeMapExt}, street:${streetMapExt}, homeProps:${homePropsExt}(x${homePropsScale}), streetPropsAtlas:${streetPropsAtlas}, lightStreetTiles:${lightStreetTiles}, lightMgNpcs:${lightMgNpcs}`
   );
 }
 

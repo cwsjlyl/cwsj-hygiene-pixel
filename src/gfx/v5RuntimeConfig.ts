@@ -7,4 +7,6 @@ export const V5_HD_CHARS_EXT: 'png' | 'webp' = 'webp';
 export const V6_HOME_PROPS_EXT: 'png' | 'webp' = 'webp';
 export const V6_HOME_PROPS_SCALE: number = 4;
 export const V6_LIGHT_MG_NPCS: boolean = true;
+export const V6_STREET_PROPS_ATLAS: boolean = true;
+export const V6_LIGHT_STREET_TILES: boolean = true;
 export const V5_VALID_STREET_PROPS: readonly string[] = [];

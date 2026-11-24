@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { sound } from '../audio/RetroSound';
-import { V6_HOME_PROPS_SCALE, V6_LIGHT_MG_NPCS } from '../gfx/v5RuntimeConfig';
+import { V6_HOME_PROPS_SCALE, V6_LIGHT_MG_NPCS, V6_LIGHT_STREET_TILES } from '../gfx/v5RuntimeConfig';
 import { MedalRank } from '../state/gameState';
 
 interface MinigameInitData {
@@ -10,6 +10,7 @@ interface MinigameInitData {
 }
 
 const MG_MULT = V6_LIGHT_MG_NPCS ? 2 : 1;
+const STREET_TILE_MULT = V6_LIGHT_STREET_TILES ? 2 : 1;
 
 export class MinigameScene extends Phaser.Scene {
   private taskId = '';
@@ -483,7 +484,9 @@ export class MinigameScene extends Phaser.Scene {
 
     let acFixed = false;
     let kills = 0;
-    const acSpr = this.add.sprite(300, 332, 'tiles-street', 9).setScale(1.65).setInteractive({ useHandCursor: true });
+    const acSpr = this.add.sprite(300, 332, 'tiles-street', 9)
+      .setScale(1.65 * STREET_TILE_MULT)
+      .setInteractive({ useHandCursor: true });
     const acHint = this.add.text(300, 396, '🔧 點擊修好滴水冷氣', {
       fontSize: '18px', color: '#fde047', fontStyle: 'bold', stroke: '#020617', strokeThickness: 3
     }).setOrigin(0.5);
@@ -597,7 +600,7 @@ export class MinigameScene extends Phaser.Scene {
           this.updateProgress((sealedCount * 2 + 1) / 6);
         } else if (stage === 1 && selectedTool === 'mesh') {
           stage = 2;
-          hole.clearTint().setTexture('tiles-street', 15).setScale(2.1);
+          hole.clearTint().setTexture('tiles-street', 15).setScale(2.1 * STREET_TILE_MULT);
           stLabel.setText('✅ 鐵絲網封妥！').setColor('#6ee7b7');
           sealedCount++;
           this.combo++;

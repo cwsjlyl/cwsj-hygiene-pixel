@@ -9,7 +9,9 @@ import {
   V5_STREET_NATIVE_1X,
   V5_VALID_STREET_PROPS,
   V6_HOME_PROPS_EXT,
-  V6_LIGHT_MG_NPCS
+  V6_LIGHT_MG_NPCS,
+  V6_LIGHT_STREET_TILES,
+  V6_STREET_PROPS_ATLAS
 } from '../gfx/v5RuntimeConfig';
 
 export class PreloadScene extends Phaser.Scene {
@@ -21,7 +23,7 @@ export class PreloadScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const bg = this.add.rectangle(width / 2, height / 2, 500, 30, 0x1e293b).setStrokeStyle(3, 0x60a5fa);
     const fill = this.add.rectangle(width / 2 - 244, height / 2, 4, 20, 0x10b981).setOrigin(0, 0.5);
-    const label = this.add.text(width / 2, height / 2 - 42, '載入 iPad 輕量家居擺設與關卡圖集...', {
+    const label = this.add.text(width / 2, height / 2 - 42, '載入全場景 iPad 輕量圖集...', {
       fontSize: '22px', color: '#fde047', fontStyle: 'bold', stroke: '#090d16', strokeThickness: 4
     }).setOrigin(0.5);
 
@@ -30,7 +32,7 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=11';
+    const v = '?v=12';
     this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
     this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
     this.load.atlas(
@@ -45,11 +47,19 @@ export class PreloadScene extends Phaser.Scene {
       });
     }
 
-    STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
-      if (V5_VALID_STREET_PROPS.includes(spec.key)) {
-        this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
-      }
-    });
+    if (V6_STREET_PROPS_ATLAS) {
+      this.load.atlas(
+        'street-props',
+        `./assets/sprites/street-props-atlas.png${v}`,
+        `./assets/sprites/street-props-atlas.json${v}`
+      );
+    } else {
+      STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
+        if (V5_VALID_STREET_PROPS.includes(spec.key)) {
+          this.load.image(`prop-street-${spec.key}`, `./assets/sprites/props-street/${spec.key}.png${v}`);
+        }
+      });
+    }
 
     if (V5_HD_CHARS_ENABLED) {
       this.load.spritesheet('hero', `./assets/sprites/char-v5-hero.${V5_HD_CHARS_EXT}${v}`, { frameWidth: 112, frameHeight: 148 });
@@ -61,9 +71,10 @@ export class PreloadScene extends Phaser.Scene {
     }
 
     const mgNpcFrame = V6_LIGHT_MG_NPCS ? 32 : 64;
+    const streetTileFrame = V6_LIGHT_STREET_TILES ? 32 : 64;
     this.load.spritesheet('npcs', `./assets/sprites/sprites-npcs-pests.png${v}`, { frameWidth: mgNpcFrame, frameHeight: mgNpcFrame });
     this.load.spritesheet('mg', `./assets/sprites/minigame-sprites.png${v}`, { frameWidth: mgNpcFrame, frameHeight: mgNpcFrame });
-    this.load.spritesheet('tiles-street', `./assets/tilesets/tileset-hk-street.png${v}`, { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet('tiles-street', `./assets/tilesets/tileset-hk-street.png${v}`, { frameWidth: streetTileFrame, frameHeight: streetTileFrame });
 
     this.load.on('complete', () => { bg.destroy(); fill.destroy(); label.destroy(); });
   }
@@ -83,6 +94,7 @@ export class PreloadScene extends Phaser.Scene {
 
       sanitizeSpriteTextureAlpha(this, 'hero', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'home-props', Phaser.Textures.FilterMode.NEAREST, false);
+      sanitizeSpriteTextureAlpha(this, 'street-props', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'npcs', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'mg', Phaser.Textures.FilterMode.NEAREST, false);
       sanitizeSpriteTextureAlpha(this, 'tiles-street', Phaser.Textures.FilterMode.NEAREST, false);
@@ -103,12 +115,14 @@ export class PreloadScene extends Phaser.Scene {
         });
       }
 
-      STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
-        const tk = `prop-street-${spec.key}`;
-        if (this.textures.exists(tk)) {
-          sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, spec.key !== 'daipaidong_sign');
-        }
-      });
+      if (!V6_STREET_PROPS_ATLAS) {
+        STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
+          const tk = `prop-street-${spec.key}`;
+          if (this.textures.exists(tk)) {
+            sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, spec.key !== 'daipaidong_sign');
+          }
+        });
+      }
 
       syncHeroPortraitToDom(this);
 
