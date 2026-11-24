@@ -28,7 +28,7 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=8';
+    const v = '?v=9';
     this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
     this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
     this.load.atlas('home-props', `./assets/sprites/home-props-atlas.png${v}`, `./assets/sprites/home-props-atlas.json${v}`);
