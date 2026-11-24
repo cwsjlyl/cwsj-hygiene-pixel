@@ -9,6 +9,12 @@ import {
   V6_LIGHT_STREET_TILES,
   V6_STREET_PROPS_ATLAS
 } from '../gfx/v5RuntimeConfig';
+import {
+  buildHomeWallColliders,
+  buildStreetWorldColliders,
+  findWalkablePath,
+  WorldRect
+} from '../gfx/worldCollisions';
 import { VirtualJoystick } from '../input/VirtualJoystick';
 import { gameState, MapId, MedalRank } from '../state/gameState';
 
@@ -24,9 +30,8 @@ interface MapHotspot {
   emote?: Phaser.GameObjects.Sprite;
 }
 
-interface TapWalkTarget {
-  x: number;
-  y: number;
+interface TapWalkState {
+  waypoints: Array<{ x: number; y: number }>;
   pendingHotspot: MapHotspot | null;
   stuckMs: number;
   lastX: number;
@@ -48,8 +53,10 @@ function hy(y1380: number): number {
 
 export class ExploreScene extends Phaser.Scene {
   private hero!: Phaser.Physics.Arcade.Sprite;
+  private heroFootOffsetY = 29;
   private companion!: Phaser.GameObjects.Sprite;
   private colliders!: Phaser.Physics.Arcade.StaticGroup;
+  private obstacleRects: WorldRect[] = [];
   private hotspots: MapHotspot[] = [];
   private activeHotspot: MapHotspot | null = null;
   private promptTag!: Phaser.GameObjects.Text;
@@ -61,7 +68,7 @@ export class ExploreScene extends Phaser.Scene {
   private worldW = 1280;
   private worldH = 920;
 
-  private tapTarget: TapWalkTarget | null = null;
+  private tapState: TapWalkState | null = null;
   private tapMarker: Phaser.GameObjects.Arc | null = null;
   private lastHotspotTapAt = 0;
 
@@ -95,12 +102,12 @@ export class ExploreScene extends Phaser.Scene {
 
     this.openDialogue(
       '媽媽',
-      `${gameState.studentName}，歡迎回到溫馨像素家居！全屋與香港街道擺設均已升級為 iPad 輕量極速版，你可以輕觸地圖任意地點走過去，或點選發光家具自動上前互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】出發吧！`
+      `${gameState.studentName}，歡迎回到溫馨像素家居！全屋與香港街道擺設均已升級為 iPad 輕量極速版，你可以輕觸地圖任意地點走過去，或點選發光家具自動穿門繞障上前互動。完成屋企 5 個衛生任務後，就從左上【玄關大門】出發吧！`
     );
   }
 
   private clearTapTarget(): void {
-    this.tapTarget = null;
+    this.tapState = null;
     if (this.tapMarker) {
       this.tapMarker.destroy();
       this.tapMarker = null;
@@ -108,18 +115,48 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   private setTapDestination(wx: number, wy: number, pendingHotspot: MapHotspot | null = null): void {
-    const padX = gameState.currentMap === 'home' ? 40 : 52;
-    const padY = gameState.currentMap === 'home' ? 40 : 56;
+    if (!this.hero) return;
+    const padX = gameState.currentMap === 'home' ? 28 : 36;
+    const padY = gameState.currentMap === 'home' ? 28 : 36;
     const tx = Phaser.Math.Clamp(wx, padX, this.worldW - padX);
     const ty = Phaser.Math.Clamp(wy, padY, this.worldH - padY);
+
+    const startFx = this.hero.x;
+    const startFy = this.hero.y + this.heroFootOffsetY;
+    const goalFx = tx;
+    const goalFy = ty + this.heroFootOffsetY;
+
+    const footPath = findWalkablePath(
+      startFx,
+      startFy,
+      goalFx,
+      goalFy,
+      this.worldW,
+      this.worldH,
+      this.obstacleRects,
+      20,
+      gameState.currentMap === 'home' ? 12 : 14,
+      gameState.currentMap === 'home' ? 8 : 10
+    );
+
+    if (footPath.length === 0) {
+      sound.wrong();
+      return;
+    }
+
+    const waypoints = footPath.map((pt) => ({
+      x: pt.x,
+      y: pt.y - this.heroFootOffsetY
+    }));
 
     if (this.tapMarker) {
       this.tapMarker.destroy();
       this.tapMarker = null;
     }
 
+    const finalPt = waypoints[waypoints.length - 1];
     const ringColor = pendingHotspot ? 0xfacc15 : 0x38bdf8;
-    const marker = this.add.circle(tx, ty, 18, ringColor, 0.22)
+    const marker = this.add.circle(finalPt.x, finalPt.y + this.heroFootOffsetY * 0.6, 18, ringColor, 0.22)
       .setStrokeStyle(3, ringColor, 0.95)
       .setDepth(45);
     this.tweens.add({
@@ -131,13 +168,12 @@ export class ExploreScene extends Phaser.Scene {
       repeat: -1
     });
     this.tapMarker = marker;
-    this.tapTarget = {
-      x: tx,
-      y: ty,
+    this.tapState = {
+      waypoints,
       pendingHotspot,
       stuckMs: 0,
-      lastX: this.hero ? this.hero.x : tx,
-      lastY: this.hero ? this.hero.y : ty
+      lastX: this.hero.x,
+      lastY: this.hero.y
     };
   }
 
@@ -196,6 +232,12 @@ export class ExploreScene extends Phaser.Scene {
     const z = this.add.rectangle(cx, cy, w, h, 0x000000, 0);
     this.physics.add.existing(z, true);
     this.colliders.add(z);
+    this.obstacleRects.push({
+      x1: cx - w / 2,
+      y1: cy - h / 2,
+      x2: cx + w / 2,
+      y2: cy + h / 2
+    });
   }
 
   private addHomeProp(
@@ -227,29 +269,34 @@ export class ExploreScene extends Phaser.Scene {
   private buildWorld(mapId: MapId): void {
     gameState.currentMap = mapId;
     sound.playBgm(mapId);
-    this.tapTarget = null;
+    this.tapState = null;
     this.tapMarker = null;
     this.children.removeAll(true);
     this.hotspots = [];
+    this.obstacleRects = [];
     this.trail = [];
     if (this.colliders) this.colliders.clear(true, true);
     this.colliders = this.physics.add.staticGroup();
 
     this.worldW = mapId === 'home' ? 1280 : 2112;
     this.worldH = mapId === 'home' ? 920 : 1152;
-    const padX = mapId === 'home' ? 36 : 48;
-    const padY = mapId === 'home' ? 36 : 52;
+    const padX = mapId === 'home' ? 24 : 32;
+    const padY = mapId === 'home' ? 24 : 32;
     this.physics.world.setBounds(padX, padY, this.worldW - padX * 2, this.worldH - padY * 2);
     this.cameras.main.setBounds(0, 0, this.worldW, this.worldH);
 
     if (mapId === 'home') this.buildCompactHdHomeScene();
     else this.buildHdStreetScene(this.worldW, this.worldH);
 
-    const spawn = mapId === 'home' ? { x: hx(845), y: hy(555) } : { x: 630, y: 535 };
+    const spawn = mapId === 'home' ? { x: hx(845), y: hy(555) } : { x: 630, y: 555 };
     const heroScale = V5_HD_CHARS_ENABLED
       ? (mapId === 'home' ? 0.58 : 0.66)
       : (mapId === 'home' ? 0.94 : 1.08);
     const compScale = (mapId === 'home' ? 0.88 : 1.0) * MG_NPC_MULT;
+
+    this.heroFootOffsetY = V5_HD_CHARS_ENABLED
+      ? Math.round(50 * heroScale)
+      : Math.round(28 * heroScale);
 
     this.companion = this.add.sprite(spawn.x - 42, spawn.y + 6, 'npcs', 16)
       .setScale(compScale)
@@ -287,8 +334,8 @@ export class ExploreScene extends Phaser.Scene {
     const bg = this.add.image(COMPACT_HOME_PAD_X, 0, 'map-home').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(1268, 920);
 
-    this.addFootCollider(hx(260), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
-    this.addFootCollider(hx(1640), hy(1210), Math.round(480 * COMPACT_HOME_RATIO), Math.round(320 * COMPACT_HOME_RATIO));
+    // Register all Home exterior & 8-room interior walls (protagonist cannot walk through walls)
+    buildHomeWallColliders(hx, hy, (cx, cy, w, h) => this.addFootCollider(cx, cy, w, h));
 
     const roomBadge = (x1902: number, y1380: number, txt: string) => {
       this.add.text(hx(x1902), hy(y1380), txt, {
@@ -311,7 +358,7 @@ export class ExploreScene extends Phaser.Scene {
     roomBadge(960, 1045, '🌿 陽光露台');
 
     const frontDoor = this.addHomeProp('door', hx(210), hy(108), 1.0, false, -5);
-    this.addHomeProp('plant_small', hx(350), hy(145), 0.92, false);
+    this.addHomeProp('plant_small', hx(350), hy(145), 0.92, true);
     const doorEmote = this.add.sprite(hx(210), hy(44), 'npcs', 29).setScale(0.95 * MG_NPC_MULT).setDepth(4200);
     this.tweens.add({ targets: doorEmote, y: doorEmote.y - 6, duration: 650, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
@@ -325,7 +372,7 @@ export class ExploreScene extends Phaser.Scene {
     this.addHomeProp('chair_side', hx(495), hy(305), 0.92, false);
     this.addHomeProp('chair_side', hx(695), hy(305), 0.92, false).setFlipX(true);
     const foodDone = gameState.isDone('cover_food');
-    const cakeTable = this.addHomeProp(foodDone ? 'dining_table' : 'cake_table', hx(595), hy(300), 0.96, false);
+    const cakeTable = this.addHomeProp(foodDone ? 'dining_table' : 'cake_table', hx(595), hy(300), 0.96, true);
     if (foodDone) {
       this.add.image(hx(595), hy(276), 'mg', 13).setScale(0.88 * MG_NPC_MULT).setDepth(cakeTable.depth + 5);
     }
@@ -339,7 +386,7 @@ export class ExploreScene extends Phaser.Scene {
 
     this.addHomeProp('nightstand', hx(1445), hy(178), 0.92, true);
     this.addHomeProp('double_bed', hx(1615), hy(215), 0.96, true);
-    this.addHomeProp('plant_large', hx(1775), hy(205), 0.88, false);
+    this.addHomeProp('plant_large', hx(1775), hy(205), 0.88, true);
 
     this.addHomeProp('tv_cabinet', hx(365), hy(585), 0.95, true);
     this.addHomeProp('green_rug', hx(365), hy(765), 1.02, false).setDepth(8);
@@ -361,8 +408,8 @@ export class ExploreScene extends Phaser.Scene {
     this.addHomeProp('chair_front', hx(1475), hy(946), 0.88, false, 6);
     this.registerTaskHotspot('trim_nails', hx(1475), hy(912), '💅 按 A 或輕觸書桌進入「精準剪甲節奏王」', deskSpr, 94);
 
-    this.addHomeProp('plant_large', hx(812), hy(1185), 0.94, false);
-    this.addHomeProp('plant_small', hx(1108), hy(1205), 0.96, false);
+    this.addHomeProp('plant_large', hx(812), hy(1185), 0.94, true);
+    this.addHomeProp('plant_small', hx(1108), hy(1205), 0.96, true);
     this.addHomeProp('balcony_railing', hx(845), hy(1294), 0.86, false, 20);
     this.addHomeProp('balcony_railing', hx(1075), hy(1294), 0.86, false, 20);
     const potSpr = this.addHomeProp('plant_whitepot', hx(960), hy(1195), 1.08, false);
@@ -402,10 +449,15 @@ export class ExploreScene extends Phaser.Scene {
   }
 
   private buildHdStreetScene(worldW: number, worldH: number): void {
+    this.add.rectangle(0, 0, worldW, worldH, 0x0b1120).setOrigin(0, 0).setDepth(-10);
     const bg = this.add.image(0, 0, 'map-street').setOrigin(0, 0).setDepth(0);
     bg.setDisplaySize(worldW, worldH);
 
     const streetScale = worldW / 1408;
+
+    // Register solid colliders for River/Canal (except Stone Arch Bridge walkway) and all Buildings/Props
+    buildStreetWorldColliders(streetScale, (cx, cy, w, h) => this.addFootCollider(cx, cy, w, h));
+
     const streetPropMap = new Map<string, Phaser.GameObjects.Image>();
     const hasStreetAtlas = V6_STREET_PROPS_ATLAS && this.textures.exists('street-props');
     const streetAtlasTex = hasStreetAtlas ? this.textures.get('street-props') : null;
@@ -425,7 +477,7 @@ export class ExploreScene extends Phaser.Scene {
 
       if (spec.layer === 'ground') spr.setDepth(16);
       else if (spec.layer === 'sign') spr.setDepth(Math.round((spec.y + spec.h) * streetScale) + 140);
-      else spr.setDepth(Math.round((spec.y + spec.h * 0.82) * streetScale));
+      else spr.setDepth(Math.round((spec.y + spec.h) * streetScale) - 10);
       streetPropMap.set(spec.key, spr);
     }
 
@@ -444,7 +496,7 @@ export class ExploreScene extends Phaser.Scene {
     streetBadge(1050, 200, '🌉 行人天橋返回家居');
     streetBadge(1440, 228, '🍜 香港味道茶餐廳');
     streetBadge(1375, 650, '🍲 興發大排檔');
-    streetBadge(1865, 495, '🏛️ 河道石拱橋');
+    streetBadge(1845, 475, '🏛️ 河道石拱橋');
 
     const homeEmote = this.add.sprite(1050, 232, 'npcs', 29).setScale(MG_NPC_MULT).setDepth(4200);
     this.tweens.add({ targets: homeEmote, y: homeEmote.y - 7, duration: 620, yoyo: true, repeat: -1 });
@@ -455,7 +507,7 @@ export class ExploreScene extends Phaser.Scene {
     gateDoor.setDepth(295 + gateDoor.displayHeight * 0.36);
 
     this.registerInteractiveHotspot({
-      id: 'go_home', x: 1050, y: 325, radius: 120,
+      id: 'go_home', x: 1050, y: 335, radius: 120,
       label: '🏠 按 A 或輕觸天橋入口返回「溫馨家居」', sprite: gateDoor, emote: homeEmote
     });
 
@@ -492,7 +544,7 @@ export class ExploreScene extends Phaser.Scene {
     const mosDone = gameState.isDone('spray_mosquito');
     const acUnit = this.add.sprite(1440, 345, 'tiles-street', mosDone ? 10 : 9)
       .setScale(1.3 * STREET_TILE_MULT)
-      .setDepth(395);
+      .setDepth(452);
     const puddle = this.add.sprite(1440, 465, 'tiles-street', mosDone ? 19 : 22)
       .setScale(1.2 * STREET_TILE_MULT)
       .setDepth(460);
@@ -521,7 +573,8 @@ export class ExploreScene extends Phaser.Scene {
     }
     this.registerTaskHotspot('seal_rathole', 1375, 780, '🕳️ 按 A 或輕觸進入「防鼠三部曲：封堵鼠洞」', rHole, 120);
 
-    const fehd = this.add.sprite(1835, 645, 'npcs', 0).setScale(1.28 * MG_NPC_MULT).setDepth(665).play('npc-fehd-walk');
+    // FEHD Officer stationed on East Riverbank Promenade (reachable ONLY via Stone Arch Bridge!)
+    const fehd = this.add.sprite(2015, 558, 'npcs', 0).setScale(1.28 * MG_NPC_MULT).setDepth(586).play('npc-fehd-walk');
     const fEmote = this.add.sprite(fehd.x, fehd.y - 54, 'npcs', 29).setScale(MG_NPC_MULT).setDepth(4200);
     this.tweens.add({ targets: fEmote, y: fEmote.y - 7, duration: 600, yoyo: true, repeat: -1 });
     this.registerInteractiveHotspot({
@@ -602,7 +655,7 @@ export class ExploreScene extends Phaser.Scene {
       } else {
         sound.pop();
         this.buildWorld('street');
-        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！你可以直接點選地面走向目標，幫忙到左上公園做三色回收、到「香港味道茶餐廳」修好滴水冷氣與滅蚊、封好「興發大排檔」外牆鼠洞，最後到右側河道石拱橋找我考核！');
+        this.openDialogue('食環署主任廣播', '歡迎來到彩雲社區街道與公園！你可以直接點選地面走向目標，幫忙到左上公園做三色回收、到「香港味道茶餐廳」修好滴水冷氣與滅蚊、封好「興發大排檔」外牆鼠洞，最後經東面「河道石拱橋」過河找我考核！');
       }
       return;
     }
@@ -611,7 +664,7 @@ export class ExploreScene extends Phaser.Scene {
     if (h.id === 'fehd_quiz') {
       if (!gameState.allTasksDone()) {
         sound.wrong();
-        this.openDialogue('食環署主任', `同學你好！請先完成全部 8 個家居與街道像素挑戰（目前 ${gameState.completedCount()} / 8），再找我進行終極認證吧！`);
+        this.openDialogue('食環署主任', `同學你好！請先完成全部 8 個家居與街道像素挑戰（目前 ${gameState.completedCount()} / 8），再過橋找我進行終極認證吧！`);
         return;
       }
       this.launchArcadeMinigame('fehd_quiz', (_m, bonus) => {
@@ -710,48 +763,54 @@ export class ExploreScene extends Phaser.Scene {
     let speedMult = 1.0;
 
     if (Math.hypot(joyMv.x, joyMv.y) > 0.08) {
-      if (this.tapTarget) this.clearTapTarget();
-    } else if (this.tapTarget) {
-      const dx = this.tapTarget.x - this.hero.x;
-      const dy = this.tapTarget.y - this.hero.y;
+      if (this.tapState) this.clearTapTarget();
+    } else if (this.tapState && this.tapState.waypoints.length > 0) {
+      const pending = this.tapState.pendingHotspot;
+      if (pending) {
+        const hDist = Phaser.Math.Distance.Between(this.hero.x, this.hero.y, pending.x, pending.y);
+        if (hDist <= Math.max(48, pending.radius * 0.78)) {
+          this.clearTapTarget();
+          this.hero.setVelocity(0, 0);
+          if (!gameState.isDone(pending.id)) {
+            this.activeHotspot = pending;
+            this.handleActionButton();
+            return;
+          }
+        }
+      }
+
+      const wp = this.tapState.waypoints[0];
+      const dx = wp.x - this.hero.x;
+      const dy = wp.y - this.hero.y;
       const dist = Math.hypot(dx, dy);
-      const pending = this.tapTarget.pendingHotspot;
-      const arriveDist = pending ? Math.max(44, pending.radius * 0.72) : 14;
+      const arriveDist = this.tapState.waypoints.length === 1 ? 14 : 18;
 
       if (dist <= arriveDist) {
-        this.clearTapTarget();
-        this.hero.setVelocity(0, 0);
-        if (pending && !gameState.isDone(pending.id)) {
-          this.activeHotspot = pending;
-          this.handleActionButton();
-          return;
+        this.tapState.waypoints.shift();
+        if (this.tapState.waypoints.length === 0) {
+          this.clearTapTarget();
+          this.hero.setVelocity(0, 0);
+          if (pending && !gameState.isDone(pending.id) && Phaser.Math.Distance.Between(this.hero.x, this.hero.y, pending.x, pending.y) <= pending.radius + 16) {
+            this.activeHotspot = pending;
+            this.handleActionButton();
+            return;
+          }
         }
       } else {
-        let ux = dx / dist;
-        let uy = dy / dist;
-        const body = this.hero.body as Phaser.Physics.Arcade.Body;
-        if ((body.blocked.left || body.blocked.right) && Math.abs(dy) > 12) {
-          ux = 0;
-          uy = Math.sign(dy);
-        } else if ((body.blocked.up || body.blocked.down) && Math.abs(dx) > 12) {
-          uy = 0;
-          ux = Math.sign(dx);
-        }
-
-        const moved = Math.hypot(this.hero.x - this.tapTarget.lastX, this.hero.y - this.tapTarget.lastY);
-        this.tapTarget.lastX = this.hero.x;
-        this.tapTarget.lastY = this.hero.y;
+        const moved = Math.hypot(this.hero.x - this.tapState.lastX, this.hero.y - this.tapState.lastY);
+        this.tapState.lastX = this.hero.x;
+        this.tapState.lastY = this.hero.y;
         if (moved < 0.35 * Math.max(0.5, delta / 16.67)) {
-          this.tapTarget.stuckMs += delta;
+          this.tapState.stuckMs += delta;
         } else {
-          this.tapTarget.stuckMs = 0;
+          this.tapState.stuckMs = 0;
         }
 
-        if (this.tapTarget.stuckMs > 550) {
+        if (this.tapState.stuckMs > 650) {
           this.clearTapTarget();
         } else {
-          moveX = ux;
-          moveY = uy;
+          moveX = dx / dist;
+          moveY = dy / dist;
           speedMult = 1.15;
           isSprint = false;
         }

@@ -1,20 +1,20 @@
 {
   "name": "cwsj-hygiene-pixel",
   "private": true,
-  "version": "1.0.0",
-  "description": "彩雲聖若瑟小學小四常識科：個人衛生、防蚊及防鼠 720p 像素風網頁遊戲 (Phaser 3 + TypeScript)",
+  "version": "2.0.0",
+  "description": "CWSJ Primary School Personal & Environmental Hygiene 2D Pixel RPG",
   "type": "module",
   "scripts": {
-    "assets": "node scripts/generate-pixel-assets.mjs && node scripts/rawUploadsPipeline.mjs",
+    "assets": "node scripts/generate-pixel-assets.mjs && node scripts/rawUploadsPipeline.mjs && node scripts/v7StreetAndCollisionPatch.mjs",
     "dev": "npm run assets && vite",
-    "build": "npm run assets && tsc --noEmit && vite build",
+    "build": "npm run assets && tsc && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "phaser": "^3.80.1"
+    "phaser": "^3.85.2"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
-    "vite": "^5.2.11"
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
   }
 }

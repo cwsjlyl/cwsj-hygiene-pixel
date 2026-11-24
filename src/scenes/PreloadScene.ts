@@ -11,7 +11,8 @@ import {
   V6_HOME_PROPS_EXT,
   V6_LIGHT_MG_NPCS,
   V6_LIGHT_STREET_TILES,
-  V6_STREET_PROPS_ATLAS
+  V6_STREET_PROPS_ATLAS,
+  V6_STREET_PROPS_EXT
 } from '../gfx/v5RuntimeConfig';
 
 export class PreloadScene extends Phaser.Scene {
@@ -32,7 +33,7 @@ export class PreloadScene extends Phaser.Scene {
       console.warn('[PreloadScene] Asset load warning:', file?.key, file?.url);
     });
 
-    const v = '?v=12';
+    const v = '?v=13';
     this.load.image('map-home', `./assets/maps/map-home.${V5_HOME_MAP_EXT}${v}`);
     this.load.image('map-street', `./assets/maps/map-street.${V5_STREET_MAP_EXT}${v}`);
     this.load.atlas(
@@ -50,7 +51,7 @@ export class PreloadScene extends Phaser.Scene {
     if (V6_STREET_PROPS_ATLAS) {
       this.load.atlas(
         'street-props',
-        `./assets/sprites/street-props-atlas.png${v}`,
+        `./assets/sprites/street-props-atlas.${V6_STREET_PROPS_EXT}${v}`,
         `./assets/sprites/street-props-atlas.json${v}`
       );
     } else {
@@ -119,7 +120,7 @@ export class PreloadScene extends Phaser.Scene {
         STREET_STANDALONE_PROP_SPECS.forEach((spec) => {
           const tk = `prop-street-${spec.key}`;
           if (this.textures.exists(tk)) {
-            sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.LINEAR, spec.key !== 'daipaidong_sign');
+            sanitizeSpriteTextureAlpha(this, tk, Phaser.Textures.FilterMode.NEAREST, false);
           }
         });
       }
