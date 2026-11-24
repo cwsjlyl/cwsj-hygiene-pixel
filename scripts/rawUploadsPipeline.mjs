@@ -7,7 +7,6 @@ const MAPS_OUT = 'public/assets/maps';
 const SPRITES_OUT = 'public/assets/sprites';
 const RUNTIME_CFG_PATH = 'src/gfx/v5RuntimeConfig.ts';
 
-// 4x4 walk cycle mapping: [stepL, idle, stepR, idle] for rows [down, left, right, up]
 const WALK_MAPS = {
   passerby: [
     [[0, 0, false], [0, 1, false], [0, 0, true],  [0, 2, false]],
@@ -147,6 +146,52 @@ function decodePngToRgba(buf) {
   return { w, h, rgba };
 }
 
+// Auto-crop transparent margins & box-downsample oversized home maps (e.g. 1920x1080) to iPad-lightweight 634x460
+function downscaleHomeForIpad(w, h, rgba) {
+  let minX = w, maxX = -1, minY = h, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (rgba[(y * w + x) * 4 + 3] > 16) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < minX) { minX = 0; maxX = w - 1; minY = 0; maxY = h - 1; }
+  const cw = maxX - minX + 1, ch = maxY - minY + 1;
+  const outW = 634, outH = 460;
+  const out = new Uint8Array(outW * outH * 4);
+  for (let dy = 0; dy < outH; dy++) {
+    const sy0 = minY + Math.floor((dy * ch) / outH);
+    const sy1 = Math.max(sy0 + 1, minY + Math.floor(((dy + 1) * ch) / outH));
+    for (let dx = 0; dx < outW; dx++) {
+      const sx0 = minX + Math.floor((dx * cw) / outW);
+      const sx1 = Math.max(sx0 + 1, minX + Math.floor(((dx + 1) * cw) / outW));
+      let r = 0, g = 0, b = 0, a = 0, cnt = 0, fgCnt = 0;
+      for (let sy = sy0; sy < sy1 && sy < h; sy++) {
+        for (let sx = sx0; sx < sx1 && sx < w; sx++) {
+          const p = (sy * w + sx) * 4;
+          cnt++;
+          a += rgba[p + 3];
+          if (rgba[p + 3] >= 128) {
+            r += rgba[p]; g += rgba[p + 1]; b += rgba[p + 2]; fgCnt++;
+          }
+        }
+      }
+      const di = (dy * outW + dx) * 4;
+      if (cnt > 0 && a / cnt >= 128 && fgCnt > 0) {
+        out[di] = Math.round(r / fgCnt);
+        out[di + 1] = Math.round(g / fgCnt);
+        out[di + 2] = Math.round(b / fgCnt);
+        out[di + 3] = 255;
+      }
+    }
+  }
+  return { w: outW, h: outH, rgba: out };
+}
+
 function classifyCharRole(fileName, w, h, rgba, usedRoles) {
   const lower = fileName.toLowerCase();
   if (/hero|boy|student|school|主角|小明/.test(lower)) return 'hero';
@@ -251,7 +296,6 @@ function cleanAndAlignSpriteSheet(role, w, h, srcRgba) {
     }
   }
 
-  // Fill tiny <=20px pinholes inside shoes/clothes
   visited.fill(0);
   for (let start = 0; start < n; start++) {
     if (!bg[start] || visited[start]) continue;
@@ -273,7 +317,6 @@ function cleanAndAlignSpriteSheet(role, w, h, srcRgba) {
     }
   }
 
-  // Remove isolated dust specks < 45px
   visited.fill(0);
   for (let start = 0; start < n; start++) {
     if (bg[start] || visited[start]) continue;
@@ -336,7 +379,6 @@ function cleanAndAlignSpriteSheet(role, w, h, srcRgba) {
     }
   }
 
-  // Nearest-neighbor resize to 448x592 (112x148 per frame)
   const outW = 448, outH = 592;
   const outRgba = new Uint8Array(outW * outH * 4);
   for (let y = 0; y < outH; y++) {
@@ -353,9 +395,28 @@ function cleanAndAlignSpriteSheet(role, w, h, srcRgba) {
   return { w: outW, h: outH, rgba: outRgba };
 }
 
-function runPipeline() {
+async function runPipeline() {
   fs.mkdirSync(MAPS_OUT, { recursive: true });
   fs.mkdirSync(SPRITES_OUT, { recursive: true });
+
+  // 1. Assemble & strictly CRC32-verify embedded iPad lightweight 634x460 RGBA home map WebP
+  if (
+    fs.existsSync('scripts/assets/v5HomeIpadWebpPart1.mjs') &&
+    fs.existsSync('scripts/assets/v5HomeIpadWebpPart2.mjs')
+  ) {
+    const { IPAD_HOME_WEBP_P1 } = await import('./assets/v5HomeIpadWebpPart1.mjs');
+    const { IPAD_HOME_WEBP_P2 } = await import('./assets/v5HomeIpadWebpPart2.mjs');
+    const c1 = crc32(Buffer.from(IPAD_HOME_WEBP_P1, 'ascii'));
+    const c2 = crc32(Buffer.from(IPAD_HOME_WEBP_P2, 'ascii'));
+    const webpBuf = Buffer.from(IPAD_HOME_WEBP_P1 + IPAD_HOME_WEBP_P2, 'base64');
+    const cAll = crc32(webpBuf);
+    console.log(`[ipad-home] P1(len=${IPAD_HOME_WEBP_P1.length}, crc=0x${c1.toString(16)}) P2(len=${IPAD_HOME_WEBP_P2.length}, crc=0x${c2.toString(16)}) Total(${webpBuf.length}B, crc=0x${cAll.toString(16)})`);
+    if (c1 !== 0x41f4e4e0 || c2 !== 0x3d225829 || cAll !== 0xcc3fb0ee) {
+      throw new Error(`[ipad-home] Checksum mismatch! Expected 0x41f4e4e0 / 0x3d225829 / 0xcc3fb0ee`);
+    }
+    fs.writeFileSync(path.join(MAPS_OUT, 'map-home.webp'), webpBuf);
+    console.log('[ipad-home] 100% bit-exact verified -> wrote public/assets/maps/map-home.webp (634x460, 42.5 KB)!');
+  }
 
   let homeMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-home.webp')) ? 'webp' : 'png';
   let streetMapExt = fs.existsSync(path.join(MAPS_OUT, 'map-street.webp')) ? 'webp' : 'png';
@@ -384,15 +445,15 @@ function runPipeline() {
       const full = path.join(RAW_DIR, file);
       const lower = file.toLowerCase();
       if (lower.endsWith('.webp')) {
-        if (/home|家居/.test(lower)) {
+        if (/home|house|room|家居|室內/.test(lower)) {
           fs.copyFileSync(full, path.join(MAPS_OUT, 'map-home.webp'));
           homeMapExt = 'webp';
-          console.log(`[raw-uploads] Copied lossless WebP home map: ${file}`);
+          console.log(`[raw-uploads] Copied WebP home map: ${file}`);
         } else if (/street|街道/.test(lower)) {
           fs.copyFileSync(full, path.join(MAPS_OUT, 'map-street.webp'));
           streetMapExt = 'webp';
           streetNative1x = true;
-          console.log(`[raw-uploads] Copied lossless WebP street map: ${file}`);
+          console.log(`[raw-uploads] Copied WebP street map: ${file}`);
         } else {
           for (const r of ['hero', 'mom', 'sister', 'passerby']) {
             if (lower.includes(r)) {
@@ -405,18 +466,27 @@ function runPipeline() {
         continue;
       }
 
-      // Native lossless PNG decode
       const rawBuf = fs.readFileSync(full);
       const { w, h, rgba } = decodePngToRgba(rawBuf);
-      if (/home|家居/.test(lower) || (w >= 500 && w <= 950 && h >= 360 && h <= 700 && w > h)) {
-        fs.copyFileSync(full, path.join(MAPS_OUT, 'map-home.png'));
+      const isHomeByName = /home|house|room|interior|家居|室內/.test(lower);
+      const hasTransparentCorners = rgba[3] === 0 && rgba[(w - 1) * 4 + 3] === 0;
+
+      if (isHomeByName || (w >= 500 && w <= 950 && h >= 360 && h <= 700 && w > h) || (w === 1920 && h === 1080 && hasTransparentCorners)) {
+        if (w > 950) {
+          const scaled = downscaleHomeForIpad(w, h, rgba);
+          fs.writeFileSync(path.join(MAPS_OUT, 'map-home.png'), encodeRgbaPng(scaled.w, scaled.h, scaled.rgba));
+          console.log(`[raw-uploads] Auto-cropped & downscaled oversized home map (${w}x${h} -> 634x460 iPad-lightweight): ${file}`);
+        } else {
+          fs.copyFileSync(full, path.join(MAPS_OUT, 'map-home.png'));
+          console.log(`[raw-uploads] Installed native PNG home map (${w}x${h}): ${file}`);
+        }
+        if (fs.existsSync(path.join(MAPS_OUT, 'map-home.webp'))) fs.unlinkSync(path.join(MAPS_OUT, 'map-home.webp'));
         homeMapExt = 'png';
-        console.log(`[raw-uploads] Installed 100% lossless native PNG home map (${w}x${h}): ${file}`);
       } else if (/street|街道/.test(lower) || (w >= 1100 && w > h * 1.4)) {
         fs.copyFileSync(full, path.join(MAPS_OUT, 'map-street.png'));
         streetMapExt = 'png';
         streetNative1x = w <= 1600;
-        console.log(`[raw-uploads] Installed 100% lossless native PNG street map (${w}x${h}): ${file}`);
+        console.log(`[raw-uploads] Installed native PNG street map (${w}x${h}): ${file}`);
       } else if (h > w * 1.1) {
         const role = classifyCharRole(file, w, h, rgba, usedRoles);
         usedRoles.add(role);
@@ -449,4 +519,4 @@ function runPipeline() {
   console.log(`[v5-pipeline] Runtime config synced -> home:${homeMapExt}, street:${streetMapExt}, hdChars:${hdCharsEnabled} (${hdCharsExt})`);
 }
 
-runPipeline();
+await runPipeline();
